@@ -9,7 +9,7 @@ import math
 import inspect
 import re
 import atexit
-import os
+import os, psutil
 
 import torch
 import torch.distributed as dist
@@ -676,10 +676,31 @@ class DataLoader(torch.utils.data.DataLoader):
 
       - Otherwise, both the sampling and subgraph construction will take place on the CPU.
     """
+    cpu_cores = None
+    user_def_worker_fn = None
+    
+    def worker_init_function(self, worker_id):
+        """Worker init default function.
+              Parameters
+              ----------
+              worker_id : int
+                  Worker ID.
+        """
+        #set_num_threads(1)
+
+        try:
+            psutil.Process().cpu_affinity([self.cpu_cores[worker_id]])
+            print('CPU-affinity worker {} has been assigned to core={}'
+                  .format(worker_id, self.cpu_cores[worker_id]))
+        except:
+            raise Exception('ERROR: cannot use affinity id={} cpu_cores={}'
+                            .format(worker_id, self.cpu_cores))
+            
     def __init__(self, graph, indices, graph_sampler, device='cpu', use_ddp=False,
                  ddp_seed=0, batch_size=1, drop_last=False, shuffle=False,
                  use_prefetch_thread=None, use_alternate_streams=None,
-                 pin_prefetcher=None, use_uva=False, **kwargs):
+                 pin_prefetcher=None, use_uva=False, use_cpu_worker_affinity=False, 
+                 cpu_worker_affinity_cores=None, **kwargs):
         if isinstance(graph, DistGraph):
             raise TypeError(
                 'Please use dgl.dataloading.DistNodeDataLoader or '
@@ -788,9 +809,33 @@ class DataLoader(torch.utils.data.DataLoader):
         self.pin_prefetcher = pin_prefetcher
         self.use_prefetch_thread = use_prefetch_thread
         worker_init_fn = WorkerInitWrapper(kwargs.get('worker_init_fn', None))
+        self.use_cpu_worker_affinity = use_cpu_worker_affinity
+        self.cpu_worker_affinity_cores = cpu_worker_affinity_cores
 
         self.other_storages = {}
-
+        
+        if self.use_cpu_worker_affinity:
+            if cpu_worker_affinity_cores is None:
+                cpu_worker_affinity_cores = []
+            if isinstance(cpu_worker_affinity_cores, list):
+                nw_work = kwargs.get('num_workers', 0)
+                if nw_work > 0:
+                    if len(cpu_worker_affinity_cores):
+                        if nw_work == len(cpu_worker_affinity_cores):
+                            self.cpu_cores = cpu_worker_affinity_cores
+                        else:
+                            raise Exception('ERROR: cpu_affinity incorrect '
+                                            'settings for cores={} num_workers={}'
+                                            .format(cpu_worker_affinity_cores, nw_work))
+                    else:
+                        self.cpu_cores = range(0, nw_work)
+                    worker_init_fn = self.worker_init_function
+                else:
+                    raise Exception('ERROR: affinity '
+                                    'should be used with --num_workers=X')
+            else:
+                raise Exception('ERROR: cpu_worker_affinity_cores '
+                                'should be a list of cores')
         super().__init__(
             self.dataset,
             collate_fn=CollateWrapper(self.graph_sampler.sample, graph),
