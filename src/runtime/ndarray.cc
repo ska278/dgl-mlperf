@@ -23,6 +23,7 @@ constexpr DGLDataType DGLDataTypeTraits<int32_t>::dtype;
 constexpr DGLDataType DGLDataTypeTraits<int64_t>::dtype;
 constexpr DGLDataType DGLDataTypeTraits<uint32_t>::dtype;
 constexpr DGLDataType DGLDataTypeTraits<uint64_t>::dtype;
+constexpr DGLDataType DGLDataTypeTraits<bfloat16>::dtype;
 #ifdef DGL_USE_CUDA
 constexpr DGLDataType DGLDataTypeTraits<__half>::dtype;
 #if BF16_ENABLED
@@ -311,6 +312,8 @@ template NDArray NDArray::FromVector<uint32_t>(
     const std::vector<uint32_t>&, DGLContext);
 template NDArray NDArray::FromVector<uint64_t>(
     const std::vector<uint64_t>&, DGLContext);
+template NDArray NDArray::FromVector<bfloat16>(
+    const std::vector<bfloat16>&, DGLContext);
 template NDArray NDArray::FromVector<float>(
     const std::vector<float>&, DGLContext);
 template NDArray NDArray::FromVector<double>(
@@ -334,8 +337,10 @@ std::vector<T> NDArray::ToVector() const {
 
 template std::vector<int32_t> NDArray::ToVector<int32_t>() const;
 template std::vector<int64_t> NDArray::ToVector<int64_t>() const;
+template std::vector<uint16_t> NDArray::ToVector<uint16_t>() const;
 template std::vector<uint32_t> NDArray::ToVector<uint32_t>() const;
 template std::vector<uint64_t> NDArray::ToVector<uint64_t>() const;
+template std::vector<bfloat16> NDArray::ToVector<bfloat16>() const;
 template std::vector<float> NDArray::ToVector<float>() const;
 template std::vector<double> NDArray::ToVector<double>() const;
 

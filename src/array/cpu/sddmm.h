@@ -29,7 +29,7 @@ namespace cpu {
 template <
     typename IdType, typename DType, typename Op, int LhsTarget = 0,
     int RhsTarget = 2>
-void SDDMMCsr(
+void SDDMMCsrNaive(
     const BcastOff& bcast, const CSRMatrix& csr, NDArray lhs, NDArray rhs,
     NDArray out) {
   const bool has_idx = !IsNullArray(csr.data);
@@ -81,7 +81,7 @@ void SDDMMCsr(
 template <
     typename IdType, typename DType, typename Op, int LhsTarget = 0,
     int RhsTarget = 2>
-void SDDMMCoo(
+void SDDMMCooNaive(
     const BcastOff& bcast, const COOMatrix& coo, NDArray lhs, NDArray rhs,
     NDArray out) {
   const bool has_idx = !IsNullArray(coo.data);
@@ -221,6 +221,34 @@ struct Dot {
   } while (0)
 
 }  // namespace op
+
+#ifdef USE_LIBXSMM
+#include "sddmm_blocking_libxsmm.h"
+#endif
+
+template <typename IdType, typename DType, typename Op,
+          int LhsTarget = 0, int RhsTarget = 2>
+void SDDMMCsr(const BcastOff& bcast,
+              const CSRMatrix& csr,
+              NDArray lhs, NDArray rhs, NDArray out) {
+#ifdef USE_LIBXSMM
+  SDDMMCsrLibxsmm<IdType, DType, Op, LhsTarget, RhsTarget>(bcast, csr, lhs, rhs, out);
+#else
+  SDDMMCsrNaive<IdType, DType, Op, LhsTarget, RhsTarget>(bcast, csr, lhs, rhs, out);
+#endif
+}
+
+template <typename IdType, typename DType, typename Op,
+          int LhsTarget = 0, int RhsTarget = 2>
+void SDDMMCoo(const BcastOff& bcast,
+              const COOMatrix& coo,
+              NDArray lhs, NDArray rhs, NDArray out) {
+#ifdef USE_LIBXSMM
+  SDDMMCooLibxsmm<IdType, DType, Op, LhsTarget, RhsTarget>(bcast, coo, lhs, rhs, out);
+#else
+  SDDMMCooNaive<IdType, DType, Op, LhsTarget, RhsTarget>(bcast, coo, lhs,  rhs, out);
+#endif
+}
 
 }  // namespace cpu
 }  // namespace aten

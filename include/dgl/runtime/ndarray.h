@@ -30,6 +30,7 @@
 
 // forward declaration
 inline std::ostream& operator<<(std::ostream& os, DGLDataType t);
+typedef BFloat16 bfloat16;
 
 namespace dgl {
 
@@ -55,6 +56,7 @@ GEN_DGLDATATYPETRAITS_FOR(int32_t, kDGLInt, 32);
 GEN_DGLDATATYPETRAITS_FOR(int64_t, kDGLInt, 64);
 // XXX(BarclayII) most DL frameworks do not support unsigned int and long
 // arrays, so I'm just converting uints to signed DTypes.
+GEN_DGLDATATYPETRAITS_FOR(uint16_t, kDGLInt, 16);
 GEN_DGLDATATYPETRAITS_FOR(uint32_t, kDGLInt, 32);
 GEN_DGLDATATYPETRAITS_FOR(uint64_t, kDGLInt, 64);
 #ifdef DGL_USE_CUDA
@@ -62,6 +64,8 @@ GEN_DGLDATATYPETRAITS_FOR(__half, kDGLFloat, 16);
 #if BF16_ENABLED
 GEN_DGLDATATYPETRAITS_FOR(__nv_bfloat16, kDGLBfloat, 16);
 #endif  // BF16_ENABLED
+#else
+GEN_DGLDATATYPETRAITS_FOR(BFloat16, kDGLBfloat, 16);
 #endif  // DGL_USE_CUDA
 GEN_DGLDATATYPETRAITS_FOR(float, kDGLFloat, 32);
 GEN_DGLDATATYPETRAITS_FOR(double, kDGLFloat, 64);

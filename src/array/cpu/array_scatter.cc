@@ -28,10 +28,12 @@ NDArray Scatter(NDArray array, IdArray indices) {
 
 template NDArray Scatter<kDGLCPU, int32_t, int32_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, int64_t, int32_t>(NDArray, IdArray);
+template NDArray Scatter<kDGLCPU, bfloat16, int32_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, float, int32_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, double, int32_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, int32_t, int64_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, int64_t, int64_t>(NDArray, IdArray);
+template NDArray Scatter<kDGLCPU, bfloat16, int64_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, float, int64_t>(NDArray, IdArray);
 template NDArray Scatter<kDGLCPU, double, int64_t>(NDArray, IdArray);
 
@@ -50,10 +52,12 @@ void Scatter_(IdArray index, NDArray value, NDArray out) {
 
 template void Scatter_<kDGLCPU, int32_t, int32_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, int64_t, int32_t>(IdArray, NDArray, NDArray);
+template void Scatter_<kDGLCPU, bfloat16, int32_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, float, int32_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, double, int32_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, int32_t, int64_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, int64_t, int64_t>(IdArray, NDArray, NDArray);
+template void Scatter_<kDGLCPU, bfloat16, int64_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, float, int64_t>(IdArray, NDArray, NDArray);
 template void Scatter_<kDGLCPU, double, int64_t>(IdArray, NDArray, NDArray);
 

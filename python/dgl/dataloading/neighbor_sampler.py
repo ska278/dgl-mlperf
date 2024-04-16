@@ -3,7 +3,6 @@ from .. import backend as F
 from ..base import EID, NID
 from ..heterograph import DGLGraph
 from ..transforms import to_block
-from ..utils import get_num_threads
 from .base import BlockSampler
 
 
@@ -150,10 +149,11 @@ class NeighborSampler(BlockSampler):
 
     def sample_blocks(self, g, seed_nodes, exclude_eids=None):
         output_nodes = seed_nodes
+        previous_edges = {}
+        previous_seed_nodes = seed_nodes
         blocks = []
-        # sample_neighbors_fused function requires multithreading to be more efficient
-        # than sample_neighbors
-        if self.fused and get_num_threads() > 1:
+
+        if self.fused:
             cpu = F.device_type(g.device) == "cpu"
             if isinstance(seed_nodes, dict):
                 for ntype in list(seed_nodes.keys()):
@@ -192,15 +192,40 @@ class NeighborSampler(BlockSampler):
                 output_device=self.output_device,
                 exclude_edges=exclude_eids,
             )
-            block = to_block(frontier, seed_nodes)
-            # If sampled from graphbolt-backed DistGraph, `EID` may not be in
-            # the block.
-            if EID in frontier.edata.keys():
-                block.edata[EID] = frontier.edata[EID]
-            seed_nodes = block.srcdata[NID]
-            blocks.insert(0, block)
 
-        return seed_nodes, output_nodes, blocks
+            # Before we add the edges, we need to first record the source nodes (of the current seed nodes)
+            # so that other edges' source nodes will not be included as next layer's seed nodes. 
+            temp = to_block(frontier, previous_seed_nodes, include_dst_in_src=False)
+            seed_nodes = temp.srcdata[NID]
+
+            # We add all previously accumulated edges to this subgraph
+            for etype in previous_edges:
+                frontier.add_edges(*previous_edges[etype], etype=etype)
+
+            # This subgraph now contains all its new edges 
+            # and previously accumulated edges
+            # so we add them
+            previous_edges = {}
+            for etype in frontier.etypes:
+                previous_edges[etype] = frontier.edges(etype=etype)
+
+            eid = frontier.edata[EID]
+            # Convert this subgraph to a message flow graph.
+            # we need to turn on the include_dst_in_src
+            # so that we get compatibility with DGL's OOTB GATConv. 
+            block = to_block(frontier, previous_seed_nodes, include_dst_in_src=True)
+            block.edata[EID] = eid
+
+            # for this layers seed nodes - 
+            # they will be our next layers' destination nodes
+            # so we add them to the collection of previous seed nodes. 
+            previous_seed_nodes = block.srcdata[NID]
+
+            # we insert the block to our list of blocks
+            blocks.insert(0, block)
+            input_nodes = seed_nodes
+
+        return input_nodes, output_nodes, blocks
 
 
 MultiLayerNeighborSampler = NeighborSampler

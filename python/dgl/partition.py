@@ -4,6 +4,7 @@ import re
 import time
 
 import numpy as np
+import copy
 
 from . import backend as F, utils
 from ._ffi.function import _init_api
@@ -18,6 +19,17 @@ __all__ = [
     "partition_graph_with_halo",
 ]
 
+RESERVED_FIELD_DTYPE = {
+    "inner_node": F.uint8,  # A flag indicates whether the node is inside a partition.
+    "inner_edge": F.uint8,  # A flag indicates whether the edge is inside a partition.
+    NID: F.int64,
+    EID: F.int64,
+    NTYPE: F.int16,
+    # `sort_csr_by_tag` and `sort_csc_by_tag` works on int32/64 only.
+    ETYPE: F.int32,
+}
+
+CANONICAL_ETYPE_DELIMITER = ":"
 
 def reorder_nodes(g, new_node_ids):
     """Generate a new graph with new node IDs.
@@ -257,7 +269,281 @@ def partition_graph_with_halo(g, node_part, extra_cached_hops, reshuffle=False):
     else:
         return subg_dict, None, None
 
+def _format_part_metadata(part_metadata, formatter):
+    """Format etypes with specified formatter."""
+    for key in ["edge_map", "etypes"]:
+        if key not in part_metadata:
+            continue
+        orig_data = part_metadata[key]
+        if not isinstance(orig_data, dict):
+            continue
+        new_data = {}
+        for etype, data in orig_data.items():
+            etype = formatter(etype)
+            new_data[etype] = data
+        part_metadata[key] = new_data
+    return part_metadata
 
+def _etype_tuple_to_str(c_etype):
+    return CANONICAL_ETYPE_DELIMITER.join(c_etype)
+
+def _dump_part_config(part_config, part_metadata):
+    """Format and dump part config."""
+    part_metadata = _format_part_metadata(part_metadata, _etype_tuple_to_str)
+    with open(part_config, "w") as outfile:
+        json.dump(part_metadata, outfile, sort_keys=False, indent=4)
+
+
+def _save_graphs(filename, g_list, formats=None, sort_etypes=False):
+    """Preprocess partitions before saving:
+    1. format data types.
+    2. sort csc/csr by tag.
+    """
+    for g in g_list:
+        for k, dtype in RESERVED_FIELD_DTYPE.items():
+            if k in g.ndata:
+                g.ndata[k] = F.astype(g.ndata[k], dtype)
+            if k in g.edata:
+                g.edata[k] = F.astype(g.edata[k], dtype)
+    for g in g_list:
+        if (not sort_etypes) or (formats is None):
+            continue
+        if "csr" in formats:
+            g = sort_csr_by_tag(g, tag=g.edata[ETYPE], tag_type="edge")
+        if "csc" in formats:
+            g = sort_csc_by_tag(g, tag=g.edata[ETYPE], tag_type="edge")
+    save_graphs(filename, g_list, formats=formats)
+
+
+def _get_inner_node_mask(graph, ntype_id):
+    if NTYPE in graph.ndata:
+        dtype = F.dtype(graph.ndata["inner_node"])
+        return (
+            graph.ndata["inner_node"]
+            * F.astype(graph.ndata[NTYPE] == ntype_id, dtype)
+            == 1
+        )
+    else:
+        return graph.ndata["inner_node"] == 1
+
+
+def _get_inner_edge_mask(graph, etype_id):
+    if ETYPE in graph.edata:
+        dtype = F.dtype(graph.edata["inner_edge"])
+        return (
+            graph.edata["inner_edge"]
+            * F.astype(graph.edata[ETYPE] == etype_id, dtype)
+            == 1
+        )
+    else:
+        return graph.edata["inner_edge"] == 1
+
+def partition_graph_with_halo_hetero(g, node_part, extra_cached_hops, graph_name, part_method, num_parts, out_path, 
+        ndata, edata, ntypes, etypes, num_nodes, num_edges, ntype_id, etype_id, reshuffle=False):
+    """Partition a graph.
+
+    Based on the given node assignments for each partition, the function splits
+    the input graph into subgraphs. A subgraph may contain HALO nodes which does
+    not belong to the partition of a subgraph but are connected to the nodes
+    in the partition within a fixed number of hops.
+
+    If `reshuffle` is turned on, the function reshuffles node IDs and edge IDs
+    of the input graph before partitioning. After reshuffling, all nodes and edges
+    in a partition fall in a contiguous ID range in the input graph.
+    The partitioend subgraphs have node data 'orig_id', which stores the node IDs
+    in the original input graph.
+
+    Parameters
+    ------------
+    g: DGLGraph
+        The graph to be partitioned
+    node_part: 1D tensor
+        Specify which partition a node is assigned to. The length of this tensor
+        needs to be the same as the number of nodes of the graph. Each element
+        indicates the partition ID of a node.
+    extra_cached_hops: int
+        The number of hops a HALO node can be accessed.
+    reshuffle : bool
+        Resuffle nodes so that nodes in the same partition are in the same ID range.
+
+    Returns
+    --------
+    a dict of DGLGraphs
+        The key is the partition ID and the value is the DGLGraph of the partition.
+    Tensor
+        1D tensor that stores the mapping between the reshuffled node IDs and
+        the original node IDs if 'reshuffle=True'. Otherwise, return None.
+    Tensor
+        1D tensor that stores the mapping between the reshuffled edge IDs and
+        the original edge IDs if 'reshuffle=True'. Otherwise, return None.
+    """
+    assert len(node_part) == g.num_nodes()
+    if reshuffle:
+        g, node_part = reshuffle_graph(g, node_part)
+        orig_nids = g.ndata["orig_id"]
+        orig_eids = g.edata["orig_id"]
+
+    node_part = utils.toindex(node_part)
+    start = time.time()
+    subgs = _CAPI_DGLPartitionWithHalo_Hetero(
+        g._graph, node_part.todgltensor(), extra_cached_hops
+    )
+
+    # g is no longer needed. Free memory.
+    g = None
+    print("Split the graph: {:.3f} seconds".format(time.time() - start))
+    node_part = node_part.tousertensor()
+    start = time.time()
+
+    os.makedirs(out_path, mode=0o775, exist_ok=True)
+    tot_num_inner_edges = 0
+    out_path = os.path.abspath(out_path)
+
+    # This function determines whether an edge belongs to a partition.
+    # An edge is assigned to a partition based on its destination node. If its destination node
+    # is assigned to a partition, we assign the edge to the partition as well.
+    def get_inner_edge(subg, inner_node):
+        inner_edge = F.zeros((subg.num_edges(),), F.int8, F.cpu())
+        inner_nids = F.nonzero_1d(inner_node)
+        # TODO(zhengda) we need to fix utils.toindex() to avoid the dtype cast below.
+        inner_nids = F.astype(inner_nids, F.int64)
+        inner_eids = subg.in_edges(inner_nids, form="eid")
+        inner_edge = F.scatter_row(
+            inner_edge,
+            inner_eids,
+            F.ones((len(inner_eids),), F.dtype(inner_edge), F.cpu()),
+        )
+        return inner_edge
+
+    # This creaets a subgraph from subgraphs returned from the CAPI above.
+    def create_subgraph(subg, induced_nodes, induced_edges, inner_node):
+        subg1 = DGLGraph(gidx=subg.graph, ntypes=["_N"], etypes=["_E"])
+        # If IDs are shuffled, we should shuffled edges. This will help us collect edge data
+        # from the distributed graph after training.
+        if reshuffle:
+            # When we shuffle edges, we need to make sure that the inner edges are assigned with
+            # contiguous edge IDs and their ID range starts with 0. In other words, we want to
+            # place these edge IDs in the front of the edge list. To ensure that, we add the IDs
+            # of outer edges with a large value, so we will get the sorted list as we want.
+            max_eid = F.max(induced_edges[0], 0) + 1
+            inner_edge = get_inner_edge(subg1, inner_node)
+            eid = F.astype(induced_edges[0], F.int64) + max_eid * F.astype(
+                inner_edge == 0, F.int64
+            )
+
+            _, index = F.sort_1d(eid)
+            subg1 = edge_subgraph(subg1, index, relabel_nodes=False)
+            subg1.ndata[NID] = induced_nodes[0]
+            subg1.edata[EID] = F.gather_row(induced_edges[0], index)
+        else:
+            subg1.ndata[NID] = induced_nodes[0]
+            subg1.edata[EID] = induced_edges[0]
+        return subg1
+
+    for i, subg in enumerate(subgs):
+        inner_node = _get_halo_heterosubgraph_inner_node(subg)
+        inner_node = F.zerocopy_from_dlpack(inner_node.to_dlpack())
+        subg = create_subgraph(
+            subg, subg.induced_nodes, subg.induced_edges, inner_node
+        )
+        subg.ndata["inner_node"] = inner_node
+        subg.ndata["part_id"] = F.gather_row(node_part, subg.ndata[NID])
+        if reshuffle:
+            subg.ndata["orig_id"] = F.gather_row(orig_nids, subg.ndata[NID])
+            subg.edata["orig_id"] = F.gather_row(orig_eids, subg.edata[EID])
+
+        if extra_cached_hops >= 1:
+            inner_edge = get_inner_edge(subg, inner_node)
+        else:
+            inner_edge = F.ones((subg.num_edges(),), F.int8, F.cpu())
+        subg.edata["inner_edge"] = inner_edge
+
+        #ntype = F.gather_row(sim_g.ndata[NTYPE], subg.ndata["orig_id"])
+        ntype = F.gather_row(ndata[NTYPE], subg.ndata["orig_id"])
+        subg.ndata[NTYPE] = F.astype(ntype, RESERVED_FIELD_DTYPE[NTYPE])
+        assert np.all(F.asnumpy(ntype) == F.asnumpy(subg.ndata[NTYPE]))
+
+        #etype = F.gather_row(sim_g.edata[ETYPE], subg.edata["orig_id"])
+        etype = F.gather_row(edata[ETYPE], subg.edata["orig_id"])
+        subg.edata[ETYPE] = F.astype(etype, RESERVED_FIELD_DTYPE[ETYPE])
+        assert np.all(F.asnumpy(etype) == F.asnumpy(subg.edata[ETYPE]))
+        
+        inner_ntype = F.boolean_mask(subg.ndata[NTYPE], subg.ndata["inner_node"] == 1)
+        inner_nids = F.boolean_mask(subg.ndata[NID], subg.ndata["inner_node"] == 1)
+
+        for nt in ntypes:
+            inner_ntype_mask = inner_ntype == ntype_id[nt]
+            typed_nids = F.boolean_mask(inner_nids, inner_ntype_mask)
+            expected_range = np.arange(
+                int(F.as_scalar(typed_nids[0])),
+                int(F.as_scalar(typed_nids[-1])) + 1,
+            )
+            assert np.all(F.asnumpy(typed_nids) == expected_range)
+
+        inner_etype = F.boolean_mask(
+            subg.edata[ETYPE], subg.edata["inner_edge"] == 1
+        )
+        inner_eids = F.boolean_mask(
+            subg.edata[EID], subg.edata["inner_edge"] == 1
+        )
+        for et in etypes:
+            inner_etype_mask = inner_etype == etype_id[et]
+            typed_eids = np.sort(
+                F.asnumpy(F.boolean_mask(inner_eids, inner_etype_mask))
+            )
+            assert np.all(
+                typed_eids
+                == np.arange(int(typed_eids[0]), int(typed_eids[-1]) + 1)
+            )
+        part_dir = os.path.join(out_path, "part" + str(i))
+        os.makedirs(part_dir, mode=0o775, exist_ok=True)
+        part_dir = os.path.abspath(part_dir)
+        #part_graph_file = os.path.join(part_dir, "graph.dgl")
+        part_graph_file = os.path.join(part_dir, "graph.pt")
+        torch.save(subg, part_graph_file)
+
+        #_save_graphs(
+        #       part_graph_file,
+        #       [subg],
+        #       formats=None,
+        #       sort_etypes=sort_etypes,
+        #)
+        node_map_val={}
+        edge_map_val={}
+        for nt in ntypes:
+            ntid = ntype_id[nt]
+            inner_node_mask = _get_inner_node_mask(subg, ntid)
+            inner_nids = F.boolean_mask(subg.ndata[NID], inner_node_mask)
+            node_map_val[nt] = [int(F.as_scalar(inner_nids[0])),
+                                int(F.as_scalar(inner_nids[-1])) + 1,
+                               ]
+
+        for et in etypes:
+            etid = etype_id[et]
+            inner_edge_mask = _get_inner_edge_mask(subg, etid)
+            inner_eids = np.sort(
+                F.asnumpy(
+                    F.boolean_mask(subg.edata[EID], inner_edge_mask)
+                )
+            )
+            edge_map_val[et] = [int(inner_eids[0]), int(inner_eids[-1]) + 1]
+
+        ntype_d = {ntype: ntype_id[ntype] for ntype in ntypes}
+        etype_d = {etype: etype_id[etype] for etype in etypes}
+        part_metadata = {
+            "graph_name": graph_name,
+            "num_nodes": num_nodes,
+            "num_edges": num_edges,
+            "part_method": part_method,
+            "num_parts": num_parts,
+            "halo_hops": extra_cached_hops,
+            "node_map": node_map_val,
+            "edge_map": edge_map_val,
+            "ntypes": ntype_d,
+            "etypes": etype_d,
+        }
+        _dump_part_config(f"{part_dir}/{graph_name}.json", part_metadata)
+        
 def get_peak_mem():
     """Get the peak memory size.
 
