@@ -101,8 +101,8 @@ class RGAT(nn.Module):
     def param_sync_end(self):
         while not self.queue.empty():
             req = self.queue.pop()
-            req.wait()
-        
+        req.wait()
+
 def block(model):
     for m in model.modules():
         if hasattr(m, "maybe_block_params"):
@@ -126,14 +126,14 @@ def evaluate(distgnn_inf, model, s_batch, e_batch, epoch_num):
             predictions.append(model(blocks, batch_inputs).argmax(1).clone().numpy())
             labels.append(batch_labels.clone().numpy())
 
-        predictions = np.concatenate(predictions)
-        labels = np.concatenate(labels)
-        acc = sklearn.metrics.accuracy_score(labels, predictions)
+    predictions = np.concatenate(predictions)
+    labels = np.concatenate(labels)
+    acc = sklearn.metrics.accuracy_score(labels, predictions)
 
-        dist.barrier()
-        acc_tensor = torch.tensor(acc)
-        dist.all_reduce(acc_tensor, op=dist.ReduceOp.SUM)
-        global_acc = acc_tensor.item() / args.world_size
+    dist.barrier()
+    acc_tensor = torch.tensor(acc)
+    dist.all_reduce(acc_tensor, op=dist.ReduceOp.SUM)
+    global_acc = acc_tensor.item() / args.world_size
 
     if args.rank == 0:
         mllogger.event(
@@ -178,7 +178,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
             args.n_classes, args.num_layers, args.num_heads, F.leaky_relu).to(device)
     
     block(model)
-    
+
     if args.use_ddp:
         model = ddp(model, find_unused_parameters=True, gradient_as_bucket_view=True)
 
@@ -338,6 +338,9 @@ def distgnn_train(distgnn, distgnn_inf, pb):
                 epoch_num = epoch + step / batch_num
                 val_acc, global_acc = evaluate(distgnn_inf, model, s_batch_inf, e_batch_inf, epoch_num)
 
+                #mp = osp.join(args.modelpath, 'model_'+str(step)+'.pt')
+                #torch.save(model.state_dict(), mp)
+
                 if global_acc >= args.target_acc:
                     if args.rank == 0:
                         if args.model_save:
@@ -392,7 +395,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Loading dataset
-    parser.add_argument('--path', type=str, default='',
+    parser.add_argument('--path', type=str, default='.',
         help='path containing the dataset')
     parser.add_argument('--dataset', type=str, default='igbh')
     parser.add_argument('--dataset_size', type=str, default='tiny',
@@ -402,7 +405,7 @@ if __name__ == '__main__':
         choices=[19, 2983], help='number of classes')
 
     # Model
-    parser.add_argument('--modelpath', type=str, default='deletethis.pt')
+    parser.add_argument('--modelpath', type=str, default='')
     parser.add_argument('--model_save', type=int, default=0)
 
     # Model parameters
@@ -491,7 +494,7 @@ if __name__ == '__main__':
     if args.rank == 0:
         mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=pb.node_feats['train_samples'].item())
         mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=pb.node_feats['eval_samples'].item())
-    
+
     t = time.time()
     distgnn = distgnn_mb(pb, args, 'paper')
     distgnn_inf = distgnn_mb_inf(pb, distgnn.gobj, args, distgnn.acc_onodes, distgnn.acc_pnodes, distgnn.tr_ntype, 'paper') 

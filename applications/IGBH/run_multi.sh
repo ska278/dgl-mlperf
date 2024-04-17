@@ -3,7 +3,7 @@
 r=1
 while [ $r -le $1 ]
 do
-  run_dist.sh -n 32 -ppn 2 -f /home/savancha/GNN/distgnn-master/applications/igb/hostfile \
+  run_dist.sh -n 32 -ppn 2 -f ./hostfile \
 	python -u -W ignore mn_rgat_train.py \
 	--path /data/savancha \
 	--dataset IGBH --dataset_size full \

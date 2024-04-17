@@ -88,12 +88,12 @@ class timer():
 
 
 def iels_master_func(pb, args):
-    iels_obj = iels_master() 
+    iels_obj = iels_master()
     
     iels_obj.iels_init(pb, args)
     return iels_obj
 
-class iels_master(): 
+class iels_master():
     def __init__(self):
         pass
     
@@ -120,10 +120,11 @@ class iels_master():
             print("sn_onid size: ", self.part_sn_onid.size())
             print("sn_gnid size: ", self.part_sn_gnid.size())
 
-        ## database to know in which partition the remote ndoes are residing
-        self.create_remote_sn_db()
+        rr = self.create_remote_sn_db_commence()
         ## local feats db - orig node id to index in the feat table
         self.create_local_sn_db(self.part_sn_onid, self.part_sn_gnid)  ## at partition level
+        ## database to know in which partition the remote ndoes are residing
+        self.create_remote_sn_db(rr)
 
         ## remote embedding buffering data structures
         self.enable_iec = args.enable_iec
@@ -174,11 +175,14 @@ class iels_master():
         self.local_sn_db = th.full([self.N], -1,  dtype=th.int32)
         self.local_sn_db[onid] = gnid
 
-    def create_remote_sn_db(self):
+    def create_remote_sn_db_commence(self):
+        return self.communicate_solid_nodes()
+
+    def create_remote_sn_db(self, rr):
         self.onid_map = th.full([self.N], -1,  dtype=th.int32)
         self.pid_map = th.full([self.N], -1,  dtype=th.int32)
 
-        self.communicate_solid_nodes()
+        rr.wait()
         offset = 0
         for np in range(self.num_parts):
             try:
@@ -205,16 +209,14 @@ class iels_master():
 
         send_size = [sn_part.shape[0] for i in range(self.num_parts)]
         send_size[self.rank] = 0
-        send_sr, recv_sr = alltoall_s(send_size)
+        req, send_sr, recv_sr = alltoall_s_async(send_size)
 
         send_sn_count = [0 for i in range(self.num_parts)]
         self.recv_sn_count = [0 for i in range(self.num_parts)]
-        tsend, trecv = sum(send_sr), sum(recv_sr)  ##recv data
+        tsend = sum(send_sr)
 
         send_sn_onid = th.empty(tsend, dtype=th.int32)
         send_sn_gnid = th.empty(tsend, dtype=th.int32)
-        self.recv_sn_onid = th.empty(trecv, dtype=th.int32)
-        self.recv_sn_gnid = th.empty(trecv, dtype=th.int32)
 
         offset = 0
         for np in range(self.num_parts):
@@ -223,21 +225,28 @@ class iels_master():
                 send_sn_gnid[offset: offset + send_sr[np]] = sn_part.to(th.int32)
             else:
                 assert int(send_sr[np]) == 0
-                assert int(recv_sr[np]) == 0
 
             send_sn_count[np] = int(send_sr[np])
-            self.recv_sn_count[np] = int(recv_sr[np])
             offset += send_sn_count[np]
 
+        req.wait()  ## wait on alltoall_s_async
 
-        assert send_sn_gnid.max() < self.pn
+        for np in range(self.num_parts):
+            self.recv_sn_count[np] = int(recv_sr[np])
+
+        trecv = sum(recv_sr)
+        self.recv_sn_onid = th.empty(trecv, dtype=th.int32)
+        self.recv_sn_gnid = th.empty(trecv, dtype=th.int32)
+
+        #assert send_sn_gnid.max() < self.pn
         req = dist.all_to_all_single(self.recv_sn_gnid, send_sn_gnid,
                                      self.recv_sn_count, send_sn_count,
                                      async_op=True)
         req = dist.all_to_all_single(self.recv_sn_onid, send_sn_onid,
                                      self.recv_sn_count, send_sn_count,
                                      async_op=True)
-        req.wait()
+        return req
+
 
     def finalize(self):
         pass
@@ -483,19 +492,19 @@ class ielspp_batch():
                 mask_lst.append(mask)
 
         assert send_rn_gnid.shape[0] == sum(send_rn_count)
-        req, send_sr, recv_sr = alltoall_s_async(send_rn_count)      
+        req, send_sr, recv_sr = alltoall_s_async(send_rn_count)
 
         offset, ssize = 0, 0
         for np in range(self.part.num_parts):
             if self.rank != np:
-                mask = mask_lst[np] 
+                mask = mask_lst[np]
                 ssize = int(mask.shape[0])
 
                 send_rn_gnid[offset: offset + ssize] = rn_gnid[mask]
                 send_rn_bnid[offset: offset + ssize] = rn_bnid[mask]
                 send_rn_onid[offset: offset + ssize] = rn_onid[mask]
             else:
-                mask = mask_lst[np] 
+                mask = mask_lst[np]
                 assert mask.shape[0] == 0
                 ssize = 0
 

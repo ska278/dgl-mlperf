@@ -206,9 +206,6 @@ def partition_book_random(args, part_config, category='', resize_data=False):
 
     dls = time.time()
     g_orig, n_classes = load_GNNdataset(args)
-    if category != '': 
-        g_orig = dgl.remove_self_loop(g_orig, etype=category)
-        g_orig = dgl.add_self_loop(g_orig, etype=category)
 
     ntypes = g_orig.ntypes
     etypes = g_orig.canonical_etypes

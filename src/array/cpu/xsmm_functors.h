@@ -1226,8 +1226,8 @@ class ReduceAddRowsIdxTPP {
             XsmmDtype<Tout>(),
             LIBXSMM_DATATYPE_F32,
             (sizeof(Tind) == 8 ? LIBXSMM_MELTW_FLAG_UNARY_IDX_SIZE_8BYTES 
-		    : LIBXSMM_MELTW_FLAG_UNARY_IDX_SIZE_4BYTES) |  
-	    LIBXSMM_MELTW_FLAG_UNARY_REDUCE_INF_ACC, 
+		    : LIBXSMM_MELTW_FLAG_UNARY_IDX_SIZE_4BYTES) |
+	    LIBXSMM_MELTW_FLAG_UNARY_REDUCE_INIT_ACC,
             LIBXSMM_MELTW_TYPE_UNARY_REDUCE_COLS_IDX_OP_ADD) {}
   void operator()(Tin* in, Tind* idx, Tind n, Tout* out) {
     reduce((void*)in, (void*)idx, (void*)&n, (void*)out, NULL);

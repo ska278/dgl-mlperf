@@ -447,7 +447,6 @@ inline int SpMMRedopCsrOpt(
 	    CSRMatrixInternal<IdType, IdType> cur_csr = block_csr_array[m * num_K_blocks + k];
 	    IdType M_start = m * M_block_size;
 	    DType etmp[rhs_dim][lhs_dim];
-	    DType etmp2[rhs_dim][lhs_dim];
 	    DType oprev[dim]; 
 
 	    for (IdType i = 0; i < cur_csr.num_rows; i++) {
@@ -571,7 +570,7 @@ void Edge_softmax_csr_forward_libxsmm(const BcastOff& bcast, const CSRMatrix& cs
   const IdType* indptr = static_cast<IdType*>(csr.indptr->data);
   IdType* edges =
     has_idx ? static_cast<IdType*>(csr.data->data) : nullptr;
-  const int64_t dim = bcast.out_len, rhs_dim = bcast.rhs_len;
+  const int64_t dim = bcast.out_len;
   DType* Eo = out.Ptr<DType>();
   DType* Ei = static_cast<DType*>(efeat->data);
 
@@ -616,7 +615,7 @@ void Edge_softmax_csr_backward_libxsmm(const BcastOff& bcast, const CSRMatrix& c
   const IdType* indptr = static_cast<IdType*>(csr.indptr->data);
   IdType* edges =
     has_idx ? static_cast<IdType*>(csr.data->data) : nullptr;
-  const int64_t dim = bcast.out_len, rhs_dim = bcast.rhs_len;
+  const int64_t dim = bcast.out_len;
   DType* W_out = static_cast<DType*>(out->data);
   DType* W_sds =  static_cast<DType*>(sds->data);
   DType* O = back_out.Ptr<DType>();

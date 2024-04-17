@@ -141,7 +141,6 @@ void SpMMSumCsr(
   }
 #if !defined(_WIN32)
 #ifdef USE_LIBXSMM
-  int cpu_id = libxsmm_cpuid_x86();
   const bool no_libxsmm = std::is_same<DType, double>::value ||
                           !dgl::runtime::Config::Global()->IsLibxsmmAvailable();
   if (!no_libxsmm) {
@@ -264,7 +263,7 @@ void SpMMCmpCsr(
   }
 #if !defined(_WIN32)
 #ifdef USE_LIBXSMM
-  int cpu_id = libxsmm_cpuid_x86();
+
   const bool no_libxsmm = std::is_same<DType, double>::value ||
                           !dgl::runtime::Config::Global()->IsLibxsmmAvailable();
   if (!no_libxsmm) {
@@ -478,7 +477,7 @@ void SpMMCmpCoo(
  * @param out The result of edge_softmax_forward.
  */
 template <typename IdType, typename DType, typename Op>
-void Edge_softmax_csr_forward_scalar(
+void Edge_softmax_csr_forward_base(
     const BcastOff& bcast, const CSRMatrix& csr, NDArray ufeat, NDArray efeat,
     NDArray out) {
   const bool has_idx = !IsNullArray(csr.data);
@@ -526,7 +525,7 @@ void Edge_softmax_csr_forward_scalar(
  * @param back_out The result of edge_softmax_backward.
  */
 template <typename IdType, typename DType, typename Op>
-void Edge_softmax_csr_backward_scalar(
+void Edge_softmax_csr_backward_base(
     const BcastOff& bcast, const CSRMatrix& csr, NDArray out, NDArray sds,
     NDArray back_out) {
   typedef typename std::conditional<
@@ -571,7 +570,7 @@ void Edge_softmax_csr_forward(const BcastOff& bcast, const CSRMatrix& csr, NDArr
 #ifdef USE_LIBXSMM
   Edge_softmax_csr_forward_libxsmm<IdType, DType, Op>(bcast, csr, ufeat, efeat, out);
 #else
-  Edge_softmax_csr_forward_naive<IdType, DType, Op>(bcast, csr, ufeat, efeat, out);
+  Edge_softmax_csr_forward_base<IdType, DType, Op>(bcast, csr, ufeat, efeat, out);
 #endif
 }
 
@@ -581,7 +580,7 @@ void Edge_softmax_csr_backward(const BcastOff& bcast, const CSRMatrix& csr, NDAr
 #ifdef USE_LIBXSMM
   Edge_softmax_csr_backward_libxsmm<IdType, DType, Op>(bcast, csr, out, sds, back_out);
 #else
-  Edge_softmax_csr_backward_naive<IdType, DType, Op>(bcast, csr, out, sds, back_out);
+  Edge_softmax_csr_backward_base<IdType, DType, Op>(bcast, csr, out, sds, back_out);
 #endif
 }
 }  // namespace cpu
