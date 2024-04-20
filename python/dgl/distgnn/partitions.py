@@ -211,7 +211,7 @@ def partition_book_random(args, part_config, category='', resize_data=False):
     etypes = g_orig.canonical_etypes
 
     part_config_g = part_config
-    di = str(num_parts) + "p"
+    di = str(num_parts) + args.token
     part_config_g = os.path.join(part_config_g, di)
     fjson = args.dataset + '.json'
     part_config = os.path.join(part_config_g, fjson)
@@ -317,7 +317,7 @@ def partition_book_metis(args, part_config, resize_ndata=False):
 
     part_config_g = part_config
 
-    di = args.dataset + "-" + str(num_parts) + "p" + "-balance-train"
+    di = args.dataset + "-" + str(num_parts) + args.token + "-balance-train"
     part_config_g = os.path.join(part_config_g, di)
     fjson = args.dataset + '.json'
     part_config = os.path.join(part_config_g, fjson)

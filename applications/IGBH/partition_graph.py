@@ -10,6 +10,7 @@ import numpy as np
 import torch 
 import os.path as osp
 from tpp_pytorch_extension.gnn.common import gnn_utils
+import datetime
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -128,6 +129,9 @@ if __name__ == "__main__":
         "--num_parts", type=int, default=4, help="number of partitions"
     )
     argparser.add_argument(
+        "--token", type=str, help="token to identify partition"
+    )
+    argparser.add_argument(
         "--part_method", type=str, default="metis", help="the partition method"
     )
     argparser.add_argument(
@@ -143,12 +147,12 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--do_partitioning",
         action="store_true",
-        help="split only features across partitions",
+        help="run partitionngi",
     )
     argparser.add_argument(
         "--feat_part_only",
         action="store_true",
-        help="split only features across partitions",
+        help="split only graph nodes across partitions",
     )
     argparser.add_argument(
         "--graph_struct_only",
@@ -179,15 +183,14 @@ if __name__ == "__main__":
     )
     args = argparser.parse_args()
 
-    torch.manual_seed(111269)
-    dgl.seed(128203)
-    start = time.time()
     if args.graph_struct_only:
+        seed = int(datetime.datetime.now().timestamp())
+        seed = seed >> (seed.bit_length() - 31)
+        torch.manual_seed(seed)
+        dgl.seed(seed)
+        
         g = IGBHeteroDGLDataset(args)[0]
-        dgl.save_graphs(osp.join(args.path, args.dataset_size, str(args.num_parts)+"p", 'struct.graph'), g)
-        print(
-            "load {} takes {:.3f} seconds".format(args.path, time.time() - start)
-        )
+        dgl.save_graphs(osp.join(args.output, 'struct.graph'), g)
         print("|V|={}, |E|={}".format(g.num_nodes(), g.num_edges()))
         print(
             "train: {}, valid: {}, test: {}".format(
@@ -197,7 +200,7 @@ if __name__ == "__main__":
             )
         )
     elif args.feat_part_only:
-        g = dgl.load_graphs(osp.join(args.path, args.dataset_size, str(args.num_parts)+"p", 'struct.graph'))[0][0]
+        g = dgl.load_graphs(osp.join(args.path, args.dataset_size, str(args.num_parts)+args.token, 'struct.graph'))[0][0]
         print("|V|={}, |E|={}".format(g.num_nodes(), g.num_edges()))
 
         label_file = 'node_label_2K.npy'
@@ -250,13 +253,6 @@ if __name__ == "__main__":
             feat_path = osp.join(args.path, args.dataset_size, 'processed', 'journal', 'node_feat.pt')
             g.nodes['journal'].data['feat'] = torch.load(feat_path)
 
-            #g.num_author_nodes = author_node_features.shape[0]
-            #g.num_institute_nodes = institute_node_features.shape[0]
-            #g.num_fos_nodes = fos_node_features.shape[0]
-
-            #g.num_conference_nodes = conference_node_features.shape[0]
-            #g.num_journal_nodes = journal_node_features.shape[0]
-
     if args.do_partitioning:
         cores = int(os.environ["OMP_NUM_THREADS"])
         gnn_utils.affinitize_cores(cores, 0)
@@ -274,6 +270,4 @@ if __name__ == "__main__":
             num_trainers_per_machine=args.num_trainers_per_machine,
             feat_part_only=args.feat_part_only
         )
-        #torch.save(orig_nids, osp.join(args.path, args.dataset_size, str(args.num_parts)+"p", 'orig_nids.dgl'))
-        #torch.save(orig_eids, osp.join(args.path, args.dataset_size, str(args.num_parts)+"p", 'orig_eids.dgl'))
 

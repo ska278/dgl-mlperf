@@ -18,6 +18,7 @@ from ..partition import (
     get_peak_mem,
     metis_partition_assignment,
     partition_graph_with_halo,
+    partition_graph_with_halo_hetero,
 )
 from ..random import choice as random_choice
 from ..transforms import sort_csc_by_tag, sort_csr_by_tag
@@ -1015,9 +1016,9 @@ def partition_graph(
                 )
             else:
                 #node_parts = random_choice(num_parts, sim_g.num_nodes())
-                node_parts = th.arange(sim_g.num_nodes(), dtype=th.int64)
+                node_parts = torch.arange(sim_g.num_nodes(), dtype=torch.int64)
                 node_parts = node_parts % num_parts
-                rand_order = th.randperm(node_parts.size(0))
+                rand_order = torch.randperm(node_parts.size(0))
                 node_parts = node_parts[rand_order]
                 del rand_order
     

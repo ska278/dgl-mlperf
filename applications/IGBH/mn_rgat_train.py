@@ -453,6 +453,10 @@ if __name__ == '__main__':
             help="enables original embedding cache")
     parser.add_argument("--checkpoint_dir", type=str, default=".",
                     help="model dir")
+    parser.add_argument("--token", type=str, default="p",
+                        help="token string to distinguish \
+                              between partition names"
+                       )
     args = parser.parse_args()
 
     args.rank, args.world_size = init_mpi(args.dist_backend, args.dist_url)
