@@ -8,7 +8,7 @@ out_path=$path"/"$dataset"/"$dataset_size
 token=$5
 fp_only=$6
 
-for np in 16 #64 32 
+for np in 16 32 #64 
 do
     echo "Partitioning graph into "$np" parts"
     echo "Input graph from "$in_path

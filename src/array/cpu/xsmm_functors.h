@@ -17,8 +17,25 @@
 
 #include <libxsmm.h>
 #include <dgl/runtime/bfloat16.h>
+#ifdef TORCH_API_INCLUDE_EXTENSION_H
+#include <torch/extension.h>
+#else
+#include <pytorch_extension_wrapper.h>
+#endif
+#include <float8.h>
 #include <string>
 #include <unordered_map>
+#ifdef _OPENMP
+#include <omp.h>
+#else
+#define omp_get_max_threads() 1
+#define omp_get_num_threads() 1
+#define omp_get_thread_num() 0
+#endif
+
+#ifdef DEBUG_TRACE_TPP
+extern int tpp_debug_trace;
+#endif
 
 #define TPP_ASSERT(cond, x...) \
   do {                         \
@@ -28,10 +45,15 @@
       exit(1);                 \
     }                          \
   } while (0)
+#define DECL_VLA_PTR(type, name, dims, ptr) type(*name) dims = (type(*) dims)ptr
 #define ALIGNDOWN(N, A) ((N) & ~((A)-1))
 
 namespace dgl_tpp {
 typedef BFloat16 bfloat16;
+#ifdef PYTORCH_SUPPORTS_FLOAT8
+typedef at::Float8_e5m2 bfloat8;
+typedef at::Float8_e4m3fn hfloat8;
+#endif
 template <typename T>
 inline libxsmm_datatype XsmmDtype();
 template <>
@@ -57,12 +79,22 @@ inline libxsmm_datatype XsmmDtype<uint16_t>() {
 template <>
 inline libxsmm_datatype XsmmDtype<bfloat16>() {
   return LIBXSMM_DATATYPE_BF16;
+#ifdef PYTORCH_SUPPORTS_FLOAT8
+template <>
+inline libxsmm_datatype XsmmDtype<bfloat8>() {
+  return LIBXSMM_DATATYPE_BF8;
+}
+template <>
+inline libxsmm_datatype XsmmDtype<hfloat8>() {
+  return LIBXSMM_DATATYPE_HF8;
+}
+#endif
 }
 
 inline void debug_print_eqn_tree(libxsmm_blasint eqn_no, bool print=false) {
   if (print) {
-    libxsmm_matrix_eqn_tree_print(eqn_no);
-    libxsmm_matrix_eqn_rpn_print(eqn_no);
+    libxsmm_meqn_tree_print(eqn_no);
+    libxsmm_meqn_rpn_print(eqn_no);
   }
 }
 
@@ -83,15 +115,14 @@ inline int meqn_push_arg(
           0,
           0);
   // Arg metadata include equation id and pos in arg array at runtime
-  libxsmm_matrix_eqn_arg_metadata arg_metadata =
-      libxsmm_create_matrix_eqn_arg_metadata(idx, in_pos);
+  libxsmm_meqn_arg_metadata arg_metadata =
+      libxsmm_create_meqn_arg_metadata(idx, in_pos);
   libxsmm_meqn_arg_shape arg_shape =
       libxsmm_create_meqn_arg_shape(m, n, ld, dtype);
-  return libxsmm_matrix_eqn_push_back_arg_v2(
-      arg_metadata, arg_shape, arg_singular_attr);
+  return libxsmm_meqn_push_back_arg(arg_metadata, arg_shape, arg_singular_attr);
 }
 
-inline libxsmm_matrix_eqn_function meqn_dispatch(
+inline libxsmm_meqn_function meqn_dispatch(
     const libxsmm_blasint m,
     const libxsmm_blasint n,
     const libxsmm_blasint* ldo,
@@ -99,7 +130,7 @@ inline libxsmm_matrix_eqn_function meqn_dispatch(
     const unsigned int idx) {
   libxsmm_meqn_arg_shape arg_shape =
       libxsmm_create_meqn_arg_shape(m, n, *ldo, out_type);
-  return libxsmm_dispatch_matrix_eqn_v2(idx, arg_shape);
+  return libxsmm_dispatch_meqn(idx, arg_shape);
 }
 
 inline int meqn_push_unary_op(
@@ -110,31 +141,27 @@ inline int meqn_push_unary_op(
   // OP metadata include equation id and an integer dictating where the op
   // metadata at runtime (if any) are located in the op arg array. -1 dictates
   // there are no op metadata needed
-  libxsmm_matrix_eqn_op_metadata op_metadata =
-      libxsmm_create_matrix_eqn_op_metadata(idx, -1);
-  return libxsmm_matrix_eqn_push_back_unary_op_v2(
-      op_metadata, type, dtype, flags);
+  libxsmm_meqn_op_metadata op_metadata =
+      libxsmm_create_meqn_op_metadata(idx, -1);
+  return libxsmm_meqn_push_back_unary_op(op_metadata, type, dtype, flags);
 }
 inline int meqn_push_binary_op(
     const libxsmm_blasint idx,
     const libxsmm_meltw_binary_type type,
     const libxsmm_bitfield flags = LIBXSMM_MELTW_FLAG_BINARY_NONE,
     const libxsmm_datatype dtype = LIBXSMM_DATATYPE_F32) {
-  libxsmm_matrix_eqn_op_metadata op_metadata =
-      libxsmm_create_matrix_eqn_op_metadata(idx, -1);
-  return libxsmm_matrix_eqn_push_back_binary_op_v2(
-      op_metadata, type, dtype, flags);
+  libxsmm_meqn_op_metadata op_metadata =
+      libxsmm_create_meqn_op_metadata(idx, -1);
+  return libxsmm_meqn_push_back_binary_op(op_metadata, type, dtype, flags);
 }
-
 inline int meqn_push_ternary_op(
     const libxsmm_blasint idx,
     const libxsmm_meltw_ternary_type type,
     const libxsmm_bitfield flags = LIBXSMM_MELTW_FLAG_TERNARY_NONE,
     const libxsmm_datatype dtype = LIBXSMM_DATATYPE_F32) {
-  libxsmm_matrix_eqn_op_metadata op_metadata =
-      libxsmm_create_matrix_eqn_op_metadata(idx, -1);
-  return libxsmm_matrix_eqn_push_back_ternary_op_v2(
-      op_metadata, type, dtype, flags);
+  libxsmm_meqn_op_metadata op_metadata =
+      libxsmm_create_meqn_op_metadata(idx, -1);
+  return libxsmm_meqn_push_back_ternary_op(op_metadata, type, dtype, flags);
 }
 
 class BaseTPP {
@@ -292,7 +319,7 @@ class UnaryTPP : public BaseTPP {
   void* build_kernel() override {
     libxsmm_meltw_unary_shape shape = libxsmm_create_meltw_unary_shape(
         cols, rows, ldi, ldo, dt_in, dt_out, dt_compute);
-    return (void*)libxsmm_dispatch_meltw_unary_v2(type, shape, flags);
+    return (void*)libxsmm_dispatch_meltw_unary(type, shape, flags);
   }
 
   libxsmm_blasint rows = 0;
@@ -393,7 +420,7 @@ class BinaryTPP : public BaseTPP {
   void* build_kernel() override {
     libxsmm_meltw_binary_shape shape = libxsmm_create_meltw_binary_shape(
         cols, rows, ldi0, ldi1, ldo, dt_in0, dt_in1, dt_out, dt_compute);
-    return (void*)libxsmm_dispatch_meltw_binary_v2(type, shape, flags);
+    return (void*)libxsmm_dispatch_meltw_binary(type, shape, flags);
   }
 
   libxsmm_blasint rows = 0;
@@ -491,8 +518,8 @@ class ConvertTPP {
  private:
   int rows = 0;
   int cols = 0;
-  int ldi;
-  int ldo;
+  int ldi = 0;
+  int ldo = 0;
   UnaryTPP kernel;
   bool init_done = false;
 };
