@@ -17,12 +17,6 @@
 
 #include <libxsmm.h>
 #include <dgl/runtime/bfloat16.h>
-#ifdef TORCH_API_INCLUDE_EXTENSION_H
-#include <torch/extension.h>
-#else
-#include <pytorch_extension_wrapper.h>
-#endif
-#include <float8.h>
 #include <string>
 #include <unordered_map>
 #ifdef _OPENMP
@@ -50,10 +44,6 @@ extern int tpp_debug_trace;
 
 namespace dgl_tpp {
 typedef BFloat16 bfloat16;
-#ifdef PYTORCH_SUPPORTS_FLOAT8
-typedef at::Float8_e5m2 bfloat8;
-typedef at::Float8_e4m3fn hfloat8;
-#endif
 template <typename T>
 inline libxsmm_datatype XsmmDtype();
 template <>
@@ -79,16 +69,6 @@ inline libxsmm_datatype XsmmDtype<uint16_t>() {
 template <>
 inline libxsmm_datatype XsmmDtype<bfloat16>() {
   return LIBXSMM_DATATYPE_BF16;
-#ifdef PYTORCH_SUPPORTS_FLOAT8
-template <>
-inline libxsmm_datatype XsmmDtype<bfloat8>() {
-  return LIBXSMM_DATATYPE_BF8;
-}
-template <>
-inline libxsmm_datatype XsmmDtype<hfloat8>() {
-  return LIBXSMM_DATATYPE_HF8;
-}
-#endif
 }
 
 inline void debug_print_eqn_tree(libxsmm_blasint eqn_no, bool print=false) {
@@ -1431,14 +1411,14 @@ class MulReduceTPP : public BaseTPP {
  public:
   MulReduceTPP() {}
   MulReduceTPP(int rows, int cols) : rows(rows), cols(cols) {
-    kernel = (libxsmm_matrix_eqn_function)get_kernel();
+    kernel = (libxsmm_meqn_function)get_kernel();
     initialized = true;
   }
 
   void operator()(T1* in0, T2* in1, T3* out) {
     if (!initialized)
       return;
-    libxsmm_matrix_eqn_param eqn_param;
+    libxsmm_meqn_param eqn_param;
     libxsmm_matrix_arg arg_array[2];
     arg_array[0].primary = (void*)in0;
     arg_array[1].primary = (void*)in1;
@@ -1475,7 +1455,7 @@ class MulReduceTPP : public BaseTPP {
     auto dt2 = XsmmDtype<T2>();
     auto dt3 = XsmmDtype<T3>();
     libxsmm_blasint ld = 1;
-    libxsmm_blasint my_eqn0 = libxsmm_matrix_eqn_create();
+    libxsmm_blasint my_eqn0 = libxsmm_meqn_create();
     meqn_push_unary_op(
         my_eqn0,
         LIBXSMM_MELTW_TYPE_UNARY_REDUCE_X_OP_ADD,
@@ -1495,7 +1475,7 @@ class MulReduceTPP : public BaseTPP {
  private:
   int rows = 0;
   int cols = 0;
-  libxsmm_matrix_eqn_function kernel = NULL;
+  libxsmm_meqn_function kernel = NULL;
 };
 
 }; // namespace dgl_tpp
