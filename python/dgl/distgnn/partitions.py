@@ -14,9 +14,11 @@ import torch.distributed as dist
 from dgl.distgnn.communicate import mpi_allreduce
 import time
 
+debug = False
+
 class partition_book:
     def __init__(self, p):
-        g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes = p
+        g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, nmi, nmp = p
         self.g_orig = g_orig
         self.node_feats = node_feats
         self.node_map = node_map
@@ -24,6 +26,8 @@ class partition_book:
         self.n_classes = n_classes
         self.dle = dle
         self.etypes = etypes
+        self.onid_map = nmi
+        self.pid_map = nmp
 
 def standardize_metis_parts(graph, node_feats, rank, resize=False):
     N = graph.number_of_nodes()
@@ -168,14 +172,14 @@ def load_GNNdataset(args):
 
             try:
                 g_orig, n_classes = load_ogb(args.dataset)
-                if not args.debug:
+                if not debug:
                     try:
                         del g_orig.ndata['feat']
                         del g_orig.ndata['features']
                     except:
                         pass
                 g_orig = dgl.add_reverse_edges(g_orig)
-                if args.rank == 0 and not args.debug:
+                if args.rank == 0 and not debug:
                     dgl.save_graphs(filename, [g_orig])
                     th.save(th.tensor(n_classes), tfilename)
             except Exception as e:
@@ -186,9 +190,9 @@ def load_GNNdataset(args):
     elif args.dataset == 'IGBH':
         filename = os.path.join(
                      args.path, 
-                     args.dataset, 
-                     args.dataset_size, 
-                     str(args.world_size)+"p", 
+                     args.dataset,
+                     args.dataset_size,
+                     str(args.world_size)+args.token,
                      "struct.graph"
                    )
         assert(os.path.isfile(filename)) == True
@@ -206,6 +210,9 @@ def partition_book_random(args, part_config, category='', resize_data=False):
 
     dls = time.time()
     g_orig, n_classes = load_GNNdataset(args)
+    if category != '':
+        g_orig = dgl.remove_self_loop(g_orig, etype=category)
+        g_orig = dgl.add_self_loop(g_orig, etype=category)
 
     ntypes = g_orig.ntypes
     etypes = g_orig.canonical_etypes
@@ -228,6 +235,11 @@ def partition_book_random(args, part_config, category='', resize_data=False):
     part_files = part_metadata['part-{}'.format(args.rank)]
     node_feats = load_tensors(prefix + part_files['node_feats'])
     graph = load_graphs(prefix + part_files['part_graph'])[0][0]
+    
+    path = prefix + part_files['part_graph']
+    dname = os.path.dirname(path)
+    node_map_index = th.load(os.path.join(dname, "node_map_index.pt"))  ## Push these into json
+    node_map_part = th.load(os.path.join(dname, "node_map_part.pt"))  ## Push these into json
     
     nf_keys = node_feats.keys()
 
@@ -302,7 +314,7 @@ def partition_book_random(args, part_config, category='', resize_data=False):
 
     #node_map = part_metadata['node_map']
     node_map = None
-    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes
+    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, node_map_index, node_map_part
     pb = partition_book(d)
     return pb
 
@@ -359,7 +371,7 @@ def partition_book_metis(args, part_config, resize_ndata=False):
         print("n_classes: ", n_classes, flush=True)
 
     etypes = None
-    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes
+    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, None, None
     pb = partition_book(d)
     return pb
 

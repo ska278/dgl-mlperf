@@ -19,17 +19,6 @@
 #include <dgl/runtime/bfloat16.h>
 #include <string>
 #include <unordered_map>
-#ifdef _OPENMP
-#include <omp.h>
-#else
-#define omp_get_max_threads() 1
-#define omp_get_num_threads() 1
-#define omp_get_thread_num() 0
-#endif
-
-#ifdef DEBUG_TRACE_TPP
-extern int tpp_debug_trace;
-#endif
 
 #define TPP_ASSERT(cond, x...) \
   do {                         \
@@ -39,7 +28,6 @@ extern int tpp_debug_trace;
       exit(1);                 \
     }                          \
   } while (0)
-#define DECL_VLA_PTR(type, name, dims, ptr) type(*name) dims = (type(*) dims)ptr
 #define ALIGNDOWN(N, A) ((N) & ~((A)-1))
 
 namespace dgl_tpp {
@@ -99,7 +87,8 @@ inline int meqn_push_arg(
       libxsmm_create_meqn_arg_metadata(idx, in_pos);
   libxsmm_meqn_arg_shape arg_shape =
       libxsmm_create_meqn_arg_shape(m, n, ld, dtype);
-  return libxsmm_meqn_push_back_arg(arg_metadata, arg_shape, arg_singular_attr);
+  return libxsmm_meqn_push_back_arg(
+      arg_metadata, arg_shape, arg_singular_attr);
 }
 
 inline libxsmm_meqn_function meqn_dispatch(
@@ -123,7 +112,8 @@ inline int meqn_push_unary_op(
   // there are no op metadata needed
   libxsmm_meqn_op_metadata op_metadata =
       libxsmm_create_meqn_op_metadata(idx, -1);
-  return libxsmm_meqn_push_back_unary_op(op_metadata, type, dtype, flags);
+  return libxsmm_meqn_push_back_unary_op(
+      op_metadata, type, dtype, flags);
 }
 inline int meqn_push_binary_op(
     const libxsmm_blasint idx,
@@ -132,8 +122,10 @@ inline int meqn_push_binary_op(
     const libxsmm_datatype dtype = LIBXSMM_DATATYPE_F32) {
   libxsmm_meqn_op_metadata op_metadata =
       libxsmm_create_meqn_op_metadata(idx, -1);
-  return libxsmm_meqn_push_back_binary_op(op_metadata, type, dtype, flags);
+  return libxsmm_meqn_push_back_binary_op(
+      op_metadata, type, dtype, flags);
 }
+
 inline int meqn_push_ternary_op(
     const libxsmm_blasint idx,
     const libxsmm_meltw_ternary_type type,
@@ -141,7 +133,8 @@ inline int meqn_push_ternary_op(
     const libxsmm_datatype dtype = LIBXSMM_DATATYPE_F32) {
   libxsmm_meqn_op_metadata op_metadata =
       libxsmm_create_meqn_op_metadata(idx, -1);
-  return libxsmm_meqn_push_back_ternary_op(op_metadata, type, dtype, flags);
+  return libxsmm_meqn_push_back_ternary_op(
+      op_metadata, type, dtype, flags);
 }
 
 class BaseTPP {

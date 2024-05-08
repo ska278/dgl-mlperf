@@ -116,15 +116,25 @@ class iels_master():
         self.part_sn_onid = self.ndata['orig'][:self.pn]
         self.part_sn_gnid = th.tensor(list(th.arange(self.pn)), dtype=th.int32)
 
-        if args.debug and self.rank == 0:
+        if debug and self.rank == 0:
             print("sn_onid size: ", self.part_sn_onid.size())
             print("sn_gnid size: ", self.part_sn_gnid.size())
 
-        rr = self.create_remote_sn_db_commence()
+        if debug:
+           rr = self.create_remote_sn_db_commence()
+           assert th.equal(self.onid_map, pb.onid_map) == True
+           assert th.equal(self.pid_map, pb.pid_map) == True
+        else:
+           assert pb.onid_map.shape[0] == self.N
+           assert pb.pid_map.shape[0] == self.N            
+           self.onid_map = pb.onid_map
+           self.pid_map = pb.pid_map
+        
         ## local feats db - orig node id to index in the feat table
         self.create_local_sn_db(self.part_sn_onid, self.part_sn_gnid)  ## at partition level
         ## database to know in which partition the remote ndoes are residing
-        self.create_remote_sn_db(rr)
+        if debug:
+            self.create_remote_sn_db(rr)
 
         ## remote embedding buffering data structures
         self.enable_iec = args.enable_iec

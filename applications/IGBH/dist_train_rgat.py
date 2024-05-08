@@ -125,15 +125,14 @@ def evaluate(distgnn_inf, model, s_batch, e_batch, epoch_num):
 
             predictions.append(model(blocks, batch_inputs).argmax(1).clone().numpy())
             labels.append(batch_labels.clone().numpy())
+        predictions = np.concatenate(predictions)
+        labels = np.concatenate(labels)
+        acc = sklearn.metrics.accuracy_score(labels, predictions)
 
-    predictions = np.concatenate(predictions)
-    labels = np.concatenate(labels)
-    acc = sklearn.metrics.accuracy_score(labels, predictions)
-
-    dist.barrier()
-    acc_tensor = torch.tensor(acc)
-    dist.all_reduce(acc_tensor, op=dist.ReduceOp.SUM)
-    global_acc = acc_tensor.item() / args.world_size
+        dist.barrier()
+        acc_tensor = torch.tensor(acc)
+        dist.all_reduce(acc_tensor, op=dist.ReduceOp.SUM)
+        global_acc = acc_tensor.item() / args.world_size
 
     if args.rank == 0:
         mllogger.event(
@@ -171,11 +170,9 @@ def distgnn_train(distgnn, distgnn_inf, pb):
     features   = distgnn.get_feats
     in_feats   = features.shape[1]
 
-    device = th.device('cpu')
-
     with opt_impl(args.opt_mlp, args.use_bf16):
         model = RGAT(g_orig.etypes, in_feats, args.hidden_channels,
-            args.n_classes, args.num_layers, args.num_heads, F.leaky_relu).to(device)
+            args.n_classes, args.num_layers, args.num_heads, F.leaky_relu)
     
     block(model)
 
@@ -201,7 +198,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
         size_all_mb = (param_size + buffer_size) / 1024**2
         print('model size: {:.3f}MB'.format(size_all_mb))
 
-    loss_fcn = nn.CrossEntropyLoss().to(device)
+    loss_fcn = nn.CrossEntropyLoss()
     if args.opt_mlp:
         no_decay = ["bias"]
         optimizer_grouped_parameters = [
@@ -239,7 +236,8 @@ def distgnn_train(distgnn, distgnn_inf, pb):
     toc = time.time() - tic
 
     for epoch in range(args.n_epochs):
-        if args.rank==0: mllogger.start(key=mllog_constants.EPOCH_START)
+        if args.rank==0: 
+            mllogger.start(key=mllog_constants.EPOCH_START, metadata={"epoch_num": epoch+1})
         batch_fwd_time = AverageMeter()
         batch_bwd_time = AverageMeter()
         mbc_time = AverageMeter()
@@ -263,33 +261,36 @@ def distgnn_train(distgnn, distgnn_inf, pb):
 
             input_nodes, blocks, batch_inputs, batch_labels, seeds = distgnn.batch_setup(i)
 
-            t2 = time.time() 
-            mbc = t2 - t0
-            ticd += mbc
-            mbc_time.update(mbc)
-            
-            t3 = time.time()
+            if i > 1:
+                t2 = time.time() 
+                mbc = t2 - t0
+                ticd += mbc
+                mbc_time.update(mbc)
+                
+                t3 = time.time()
             batch_pred = model(blocks, batch_inputs).to(torch.float32)
             
             loss = loss_fcn(batch_pred, batch_labels)
             if args.use_bf16: loss = loss.to(torch.bfloat16)
 
-            t4 = time.time()
-            cf = t4 - t3
-            ticf += cf
-            batch_fwd_time.update(cf)
+            if i > 1:
+                t4 = time.time()
+                cf = t4 - t3
+                ticf += cf
+                batch_fwd_time.update(cf)
 
-            t5 = time.time()
+                t5 = time.time()
 
             optimizer.zero_grad()
             loss.backward()
 
-            t6 = time.time()
-            cb = t6 - t5
-            ticb += cb
-            batch_bwd_time.update(cb)
+            if i > 1:
+                t6 = time.time()
+                cb = t6 - t5
+                ticb += cb
+                batch_bwd_time.update(cb)
 
-            t6 = time.time()
+                t6 = time.time()
 
             distgnn.optimize(i)
 
@@ -297,7 +298,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
             #train_acc += sklearn.metrics.accuracy_score(batch_labels.cpu().numpy(),
             #    batch_pred.argmax(1).detach().cpu().numpy())*100
             if args.rank == 0:
-                if step == 0 or step % args.log_every == 0:
+                if step > 0 and step % args.log_every == 0:
                     if not args.use_ddp and not distgnn.ps_overlap:
                         print("Epoch {:05d} | Step {:05d} | Loss {:.2f} | Time(s) {:.2f} |"
                                 " MBC {:.2f} ({:.2f}) | FWD {:.2f} ({:.2f}) | BWD {:.2f} ({:.2f}) |"
@@ -338,9 +339,6 @@ def distgnn_train(distgnn, distgnn_inf, pb):
                 epoch_num = epoch + step / batch_num
                 val_acc, global_acc = evaluate(distgnn_inf, model, s_batch_inf, e_batch_inf, epoch_num)
 
-                #mp = osp.join(args.modelpath, 'model_'+str(step)+'.pt')
-                #torch.save(model.state_dict(), mp)
-
                 if global_acc >= args.target_acc:
                     if args.rank == 0:
                         if args.model_save:
@@ -353,7 +351,8 @@ def distgnn_train(distgnn, distgnn_inf, pb):
             step += 1
             t0 = time.time()
 
-        if args.rank==0: mllogger.end(key=mllog_constants.EPOCH_STOP)
+        if args.rank==0:
+            mllogger.end(key=mllog_constants.EPOCH_STOP, metadata={"epoch_num": epoch+1})
         toc_gg = time.time()
         if capture_graph_stats:
             dist.all_reduce(halo_nodes)
@@ -395,12 +394,15 @@ def distgnn_train(distgnn, distgnn_inf, pb):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Loading dataset
-    parser.add_argument('--path', type=str, default='.',
+    parser.add_argument('--path', type=str, default='',
         help='path containing the dataset')
-    parser.add_argument('--dataset', type=str, default='igbh')
-    parser.add_argument('--dataset_size', type=str, default='tiny',
+    parser.add_argument('--dataset', type=str, default='IGBH',
+            help='name of the dataset')
+    parser.add_argument('--dataset_size', type=str, default='full',
         choices=['tiny', 'small', 'medium', 'large', 'full'],
         help='size of the datasets')
+    parser.add_argument("--token", type=str, default="p",
+            help='string to identify partition root-dir')
     parser.add_argument('--n_classes', type=int, default=19,
         choices=[19, 2983], help='number of classes')
 
@@ -425,7 +427,6 @@ if __name__ == '__main__':
     parser.add_argument('--validation_frac_in_epoch', type=float, default=0.05)
     parser.add_argument('--log_every', type=int, default=5)
     parser.add_argument('--target_acc', type=float, default=1.0)
-    parser.add_argument('--device', type=int, default=0)
 
     parser.add_argument( "--opt_mlp", action="store_true",
         help="Whether to use optimized MLP impl when available",
@@ -434,7 +435,6 @@ if __name__ == '__main__':
         help="Whether to use BF16 datatype when available",
     )
 
-    parser.add_argument("--debug", type=bool, default=False)
     parser.add_argument("--mode", type=str, default="iels")
     parser.add_argument("--part_method", type=str, default="random")
     parser.add_argument("--ielsqsize", type=int, default=1,
@@ -445,18 +445,12 @@ if __name__ == '__main__':
                          help='node rank for distributed training')
     parser.add_argument('--dist-url', default='env://', type=str,
                          help='url used to set up distributed training')
-    parser.add_argument('--dist-backend', default='ccl', type=str,
+    parser.add_argument('--dist-backend', default='mpi', type=str,
                             help='distributed backend')
     parser.add_argument('--use_ddp', action='store_true',
                             help='use or not torch distributed data parallel')
     parser.add_argument("--enable_iec", action='store_true', 
             help="enables original embedding cache")
-    parser.add_argument("--checkpoint_dir", type=str, default=".",
-                    help="model dir")
-    parser.add_argument("--token", type=str, default="p",
-                        help="token string to distinguish \
-                              between partition names"
-                       )
     args = parser.parse_args()
 
     args.rank, args.world_size = init_mpi(args.dist_backend, args.dist_url)
@@ -470,9 +464,9 @@ if __name__ == '__main__':
 
 
     if args.rank == 0:
-        submission_info(mllogger, 'GNN', 'Xeon 8592 Optimized Implementation')
         mllogger.event(key=mllog_constants.CACHE_CLEAR, value=True)
         mllogger.start(key=mllog_constants.INIT_START)
+        submission_info(mllogger, mllog_constants.GNN, 'Intel', 'Intel Xeon(R) 8592, codenamed Emerald Rapids')
         mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=args.world_size*args.batch_size)
         mllogger.event(key=mllog_constants.GRADIENT_ACCUMULATION_STEPS, value=1)
         mllogger.event(key=mllog_constants.OPT_NAME, value='adam')
