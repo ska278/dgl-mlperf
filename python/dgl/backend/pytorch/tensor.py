@@ -7,7 +7,6 @@ import numpy as np
 import scipy  # Weird bug in new pytorch when import scipy after import torch
 import torch as th
 from torch.utils import dlpack
-
 from ... import ndarray as nd
 from ...function.base import TargetCode
 from ...utils import version
@@ -18,6 +17,7 @@ if version.parse(th.__version__) < version.parse("1.13.0"):
 
 def data_type_dict():
     return {
+        "bfloat8": th.float8_e5m2,
         "bfloat16": th.bfloat16,
         "float16": th.float16,
         "float32": th.float32,
@@ -432,6 +432,8 @@ def zerocopy_from_numpy(np_array):
 def zerocopy_to_dgl_ndarray(data):
     if data.dtype == th.bool:
         data = data.byte()
+    elif data.dtype ==th.float8_e5m2:
+        return nd.from_dlpack(dlpack.to_dlpack(data.contiguous()))
     return nd.from_dlpack(dlpack.to_dlpack(data.contiguous()))
 
 
