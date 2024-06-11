@@ -39,11 +39,13 @@ NDArray Repeat(NDArray array, IdArray repeats) {
 
 template NDArray Repeat<kDGLCPU, int32_t, int32_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, int64_t, int32_t>(NDArray, IdArray);
+template NDArray Repeat<kDGLCPU, bfloat8, int32_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, bfloat16, int32_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, float, int32_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, double, int32_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, int32_t, int64_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, int64_t, int64_t>(NDArray, IdArray);
+template NDArray Repeat<kDGLCPU, bfloat8, int64_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, bfloat16, int64_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, float, int64_t>(NDArray, IdArray);
 template NDArray Repeat<kDGLCPU, double, int64_t>(NDArray, IdArray);

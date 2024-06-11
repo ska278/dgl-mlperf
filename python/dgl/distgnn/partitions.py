@@ -18,7 +18,7 @@ debug = False
 
 class partition_book:
     def __init__(self, p):
-        g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, nmi, nmp = p
+        g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes = p
         self.g_orig = g_orig
         self.node_feats = node_feats
         self.node_map = node_map
@@ -26,8 +26,6 @@ class partition_book:
         self.n_classes = n_classes
         self.dle = dle
         self.etypes = etypes
-        self.onid_map = nmi
-        self.pid_map = nmp
 
 def standardize_metis_parts(graph, node_feats, rank, resize=False):
     N = graph.number_of_nodes()
@@ -236,11 +234,6 @@ def partition_book_random(args, part_config, category='', resize_data=False):
     node_feats = load_tensors(prefix + part_files['node_feats'])
     graph = load_graphs(prefix + part_files['part_graph'])[0][0]
     
-    path = prefix + part_files['part_graph']
-    dname = os.path.dirname(path)
-    node_map_index = th.load(os.path.join(dname, "node_map_index.pt"))  ## Push these into json
-    node_map_part = th.load(os.path.join(dname, "node_map_part.pt"))  ## Push these into json
-    
     nf_keys = node_feats.keys()
 
     num_nodes_per_ntype = [g_orig.num_nodes(ntype) for ntype in g_orig.ntypes]
@@ -314,7 +307,7 @@ def partition_book_random(args, part_config, category='', resize_data=False):
 
     #node_map = part_metadata['node_map']
     node_map = None
-    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, node_map_index, node_map_part
+    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes
     pb = partition_book(d)
     return pb
 
@@ -371,7 +364,7 @@ def partition_book_metis(args, part_config, resize_ndata=False):
         print("n_classes: ", n_classes, flush=True)
 
     etypes = None
-    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, None, None
+    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes
     pb = partition_book(d)
     return pb
 

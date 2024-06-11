@@ -1152,7 +1152,7 @@ void CSRSpMM(
 
   ATEN_XPU_SWITCH_CUDA(csr.indptr->ctx.device_type, XPU, "SpMM", {
     ATEN_ID_TYPE_SWITCH(csr.indptr->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(out->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(out->dtype, Dtype, XPU, "Feature data", {
         SpMMCsr<XPU, IdType, Dtype>(
             op, reduce, bcast, csr, ufeat, efeat, out, out_aux);
       });
@@ -1174,7 +1174,7 @@ void CSRSDDMM(
 
   ATEN_XPU_SWITCH_CUDA(csr.indptr->ctx.device_type, XPU, "SDDMM", {
     ATEN_ID_TYPE_SWITCH(csr.indptr->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(out->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(out->dtype, Dtype, XPU, "Feature data", {
         SDDMMCsr<XPU, IdType, Dtype>(
             op, bcast, csr, ufeat, efeat, out, lhs_target, rhs_target);
       });
@@ -1196,7 +1196,7 @@ void COOSpMM(
 
   ATEN_XPU_SWITCH_CUDA(coo.row->ctx.device_type, XPU, "SpMM", {
     ATEN_ID_TYPE_SWITCH(coo.row->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(out->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(out->dtype, Dtype, XPU, "Feature data", {
         SpMMCoo<XPU, IdType, Dtype>(
             op, reduce, bcast, coo, ufeat, efeat, out, out_aux);
       });
@@ -1218,7 +1218,7 @@ void COOSDDMM(
 
   ATEN_XPU_SWITCH_CUDA(coo.row->ctx.device_type, XPU, "SDDMM", {
     ATEN_ID_TYPE_SWITCH(coo.row->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(out->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(out->dtype, Dtype, XPU, "Feature data", {
         SDDMMCoo<XPU, IdType, Dtype>(
             op, bcast, coo, ufeat, efeat, out, lhs_target, rhs_target);
       });

@@ -102,6 +102,10 @@ typedef enum {
   kDGLFloat = 2U,
   /** @brief bfloat16 */
   kDGLBfloat = 4U,
+  /** @brief bfloat8 */
+  kDGLBfloat8 = 7U,
+  /** @brief hfloat8 */
+  kDGLHfloat8 = 8U,
   // add more data types if we are going to support them
 } DGLDataTypeCode;
 

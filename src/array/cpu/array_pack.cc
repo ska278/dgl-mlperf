@@ -46,6 +46,8 @@ template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, int32_t, int32_t>(
     NDArray, IdArray);
 template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, int64_t, int32_t>(
     NDArray, IdArray);
+template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, bfloat8, int32_t>(
+    NDArray, IdArray);
 template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, bfloat16, int32_t>(
     NDArray, IdArray);
 template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, float, int32_t>(
@@ -55,6 +57,8 @@ template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, double, int32_t>(
 template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, int32_t, int64_t>(
     NDArray, IdArray);
 template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, int64_t, int64_t>(
+    NDArray, IdArray);
+template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, bfloat8, int64_t>(
     NDArray, IdArray);
 template std::pair<NDArray, IdArray> ConcatSlices<kDGLCPU, bfloat16, int64_t>(
     NDArray, IdArray);
@@ -91,6 +95,8 @@ template std::tuple<NDArray, IdArray, IdArray> Pack<kDGLCPU, int32_t>(
     NDArray, int32_t);
 template std::tuple<NDArray, IdArray, IdArray> Pack<kDGLCPU, int64_t>(
     NDArray, int64_t);
+template std::tuple<NDArray, IdArray, IdArray> Pack<kDGLCPU, bfloat8>(
+    NDArray, bfloat8);
 template std::tuple<NDArray, IdArray, IdArray> Pack<kDGLCPU, bfloat16>(
     NDArray, bfloat16);
 template std::tuple<NDArray, IdArray, IdArray> Pack<kDGLCPU, float>(

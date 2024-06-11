@@ -26,7 +26,7 @@ void SpMM(
 
   ATEN_XPU_SWITCH_CUDA(graph->Context().device_type, XPU, "SpMM", {
     ATEN_ID_TYPE_SWITCH(graph->DataType(), IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(out->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(out->dtype, Dtype, XPU, "Feature data", {
         if (format == SparseFormat::kCSC) {
           SpMMCsr<XPU, IdType, Dtype>(
               op, reduce, bcast, graph->GetCSCMatrix(0), ufeat, efeat, out,
@@ -66,7 +66,7 @@ void SegmentMM(
       << "segment_mm expects A and B to be of the same device";
   ATEN_XPU_SWITCH_CUDA(A->ctx.device_type, XPU, "SegmentMM", {
     ATEN_ID_TYPE_SWITCH(seglen_A->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(A->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(A->dtype, Dtype, XPU, "Feature data", {
         SegmentMM<XPU, IdType, Dtype>(A, B, C, seglen_A, A_trans, B_trans);
       });
     });
@@ -83,7 +83,7 @@ void SegmentMMBackwardB(
       << "segment_mm expects seglen to be on CPU.";
   ATEN_XPU_SWITCH_CUDA(A->ctx.device_type, XPU, "SegmentMMBackwardB", {
     ATEN_ID_TYPE_SWITCH(seglen->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(A->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(A->dtype, Dtype, XPU, "Feature data", {
         SegmentMMBackwardB<XPU, IdType, Dtype>(A, dC, dB, seglen);
       });
     });
@@ -121,7 +121,7 @@ void GatherMM(
   const auto idtype = aten::IsNullArray(idx_a) ? idx_b->dtype : idx_a->dtype;
   ATEN_XPU_SWITCH_CUDA(A->ctx.device_type, XPU, "GatherMM", {
     ATEN_ID_TYPE_SWITCH(idtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(A->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(A->dtype, Dtype, XPU, "Feature data", {
         GatherMM<XPU, IdType, Dtype>(A, B, C, idx_a, idx_b);
       });
     });
@@ -161,7 +161,7 @@ void GatherMMScatter(
   }
   ATEN_XPU_SWITCH_CUDA(A->ctx.device_type, XPU, "GatherMM", {
     ATEN_ID_TYPE_SWITCH(idx_c->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(A->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(A->dtype, Dtype, XPU, "Feature data", {
         GatherMMScatter<XPU, IdType, Dtype>(A, B, C, idx_a, idx_b, idx_c);
       });
     });
@@ -203,7 +203,7 @@ void SpMMHetero(
   ATEN_XPU_SWITCH_CUDA(graph->Context().device_type, XPU, "SpMM", {
     ATEN_ID_TYPE_SWITCH(
         graph->DataType(), IdType, {
-          ATEN_FLOAT_TYPE_SWITCH_16BITS(
+          ATEN_FLOAT_TYPE_SWITCH_8BITS(
               (*out)[out_eid[0]]->dtype, Dtype, XPU, "Feature data", {
                 if (format == SparseFormat::kCSC) {
                   SpMMCsrHetero<XPU, IdType, Dtype>(
@@ -230,7 +230,7 @@ void SDDMM(
 
   ATEN_XPU_SWITCH_CUDA(graph->Context().device_type, XPU, "SDDMM", {
     ATEN_ID_TYPE_SWITCH(graph->DataType(), IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(out->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(out->dtype, Dtype, XPU, "Feature data", {
         if (format == SparseFormat::kCSR) {
           SDDMMCsr<XPU, IdType, Dtype>(
               op, bcast, graph->GetCSRMatrix(0), lhs, rhs, out, lhs_target,
@@ -278,7 +278,7 @@ void SDDMMHetero(
 
   ATEN_XPU_SWITCH_CUDA(graph->Context().device_type, XPU, "SDDMM", {
     ATEN_ID_TYPE_SWITCH(graph->DataType(), IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(
           out[rhs_eid[0]]->dtype, Dtype, XPU, "Feature data", {
             if (format == SparseFormat::kCSR) {
               std::vector<CSRMatrix> vec_csr;
@@ -315,7 +315,7 @@ void Edge_softmax_forward(
 
   ATEN_XPU_SWITCH(graph->Context().device_type, XPU, "edge_softmax", {
     ATEN_ID_TYPE_SWITCH(graph->DataType(), IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(
           out->dtype, Dtype, XPU, "edge_softmax out data", {
             Edge_softmax_csr_forward<XPU, IdType, Dtype>(
                 op, bcast, graph->GetCSCMatrix(0), ufeat, efeat, out);
@@ -333,7 +333,7 @@ void Edge_softmax_backward(
 
   ATEN_XPU_SWITCH(graph->Context().device_type, XPU, "edge_softmax_back", {
     ATEN_ID_TYPE_SWITCH(graph->DataType(), IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(
           out->dtype, Dtype, XPU, "edge_softmax out data_back", {
             Edge_softmax_csr_backward<XPU, IdType, Dtype>(
                 op, bcast, graph->GetCSCMatrix(0), out, sds, back_out);
@@ -357,7 +357,7 @@ void SegmentReduceDispatch(
     NDArray arg) {
   ATEN_XPU_SWITCH_CUDA(feat->ctx.device_type, XPU, "SegmentReduce", {
     ATEN_ID_TYPE_SWITCH(offsets->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(feat->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(feat->dtype, Dtype, XPU, "Feature data", {
         SegmentReduce<XPU, IdType, Dtype>(op, feat, offsets, out, arg);
       });
     });
@@ -368,7 +368,7 @@ void SegmentReduceDispatch(
 void ScatterAddDispatch(NDArray feat, NDArray idx, NDArray out) {
   ATEN_XPU_SWITCH_CUDA(feat->ctx.device_type, XPU, "ScatterAdd", {
     ATEN_ID_TYPE_SWITCH(idx->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(feat->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(feat->dtype, Dtype, XPU, "Feature data", {
         ScatterAdd<XPU, IdType, Dtype>(feat, idx, out);
       });
     });
@@ -385,7 +385,7 @@ void UpdateGradMinMaxDispatchHetero(
   auto src_id = pair.first;
   ATEN_XPU_SWITCH_CUDA(feat[src_id]->ctx.device_type, XPU, "ScatterAdd", {
     ATEN_ID_TYPE_SWITCH(idx[src_id]->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(
           feat[src_id]->dtype, Dtype, XPU, "Feature data", {
             UpdateGradMinMax_hetero<XPU, IdType, Dtype>(
                 graph, op, feat, idx, idx_etype, out);
@@ -398,7 +398,7 @@ void UpdateGradMinMaxDispatchHetero(
 void BackwardSegmentCmpDispatch(NDArray feat, NDArray arg, NDArray out) {
   ATEN_XPU_SWITCH_CUDA(feat->ctx.device_type, XPU, "BackwardSegmentCmp", {
     ATEN_ID_TYPE_SWITCH(arg->dtype, IdType, {
-      ATEN_FLOAT_TYPE_SWITCH_16BITS(feat->dtype, Dtype, XPU, "Feature data", {
+      ATEN_FLOAT_TYPE_SWITCH_8BITS(feat->dtype, Dtype, XPU, "Feature data", {
         BackwardSegmentCmp<XPU, IdType, Dtype>(feat, arg, out);
       });
     });

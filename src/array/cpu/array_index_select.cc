@@ -33,8 +33,10 @@ template NDArray IndexSelect<kDGLCPU, int32_t, int32_t>(NDArray, IdArray);
 template NDArray IndexSelect<kDGLCPU, int32_t, int64_t>(NDArray, IdArray);
 template NDArray IndexSelect<kDGLCPU, int64_t, int32_t>(NDArray, IdArray);
 template NDArray IndexSelect<kDGLCPU, int64_t, int64_t>(NDArray, IdArray);
-template NDArray IndexSelect<kDGLCPU, BFloat16, int32_t>(NDArray, IdArray);
-template NDArray IndexSelect<kDGLCPU, BFloat16, int64_t>(NDArray, IdArray);
+template NDArray IndexSelect<kDGLCPU, bfloat8, int32_t>(NDArray, IdArray);
+template NDArray IndexSelect<kDGLCPU, bfloat8, int64_t>(NDArray, IdArray);
+template NDArray IndexSelect<kDGLCPU, bfloat16, int32_t>(NDArray, IdArray);
+template NDArray IndexSelect<kDGLCPU, bfloat16, int64_t>(NDArray, IdArray);
 template NDArray IndexSelect<kDGLCPU, float, int32_t>(NDArray, IdArray);
 template NDArray IndexSelect<kDGLCPU, float, int64_t>(NDArray, IdArray);
 template NDArray IndexSelect<kDGLCPU, double, int32_t>(NDArray, IdArray);
@@ -48,7 +50,8 @@ DType IndexSelect(NDArray array, int64_t index) {
 
 template int32_t IndexSelect<kDGLCPU, int32_t>(NDArray array, int64_t index);
 template int64_t IndexSelect<kDGLCPU, int64_t>(NDArray array, int64_t index);
-template BFloat16 IndexSelect<kDGLCPU, BFloat16>(NDArray array, int64_t index);
+template bfloat8 IndexSelect<kDGLCPU, bfloat8>(NDArray array, int64_t index);
+template bfloat16 IndexSelect<kDGLCPU, bfloat16>(NDArray array, int64_t index);
 template float IndexSelect<kDGLCPU, float>(NDArray array, int64_t index);
 template double IndexSelect<kDGLCPU, double>(NDArray array, int64_t index);
 

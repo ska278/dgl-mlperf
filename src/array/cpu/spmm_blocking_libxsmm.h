@@ -405,6 +405,7 @@ inline int SpMMRedopCsrOpt(
     }
     else {
       auto reduce_add_idx_tpp = dgl_tpp::ReduceAddRowsIdxTPP<DType, IdType>(dim);
+      auto set_zero_tpp = dgl_tpp::SetZeroTPP<DType>(1, dim);
 #pragma omp parallel
       {
 	DType (*ofeat_mat)[dim] = (DType (*)[dim])C;
@@ -415,13 +416,14 @@ inline int SpMMRedopCsrOpt(
 	    CSRMatrixInternal<IdType, IdType> cur_csr = block_csr_array[m * num_K_blocks + k];
 	    IdType M_start = m * M_block_size;
 
-
 	    for (IdType i = 0; i < cur_csr.num_rows; i++) {
 	      IdType row_start = cur_csr.indptr[i];
 	      IdType row_end   = cur_csr.indptr[i + 1];
 	      IdType *eid = has_idx ? &cur_csr.data[row_start] : &row_start;
 	      IdType dst = i + M_start;
 	      auto n = row_end - row_start;
+
+              set_zero_tpp(ofeat_mat[dst]);
 
               reduce_add_idx_tpp(efeat_mat[0], eid, n, ofeat_mat[dst]);
 	    }
@@ -431,8 +433,6 @@ inline int SpMMRedopCsrOpt(
     }
   }
   else { //Binary + Unary
-#if 0
-#endif
     if(std::is_same<Redop, op::Max<DType>>::value || std::is_same<Redop, op::Min<DType>>::value) {
       auto max_tpp = dgl_tpp::MaxTPP<DType>(1, dim);
       auto min_tpp = dgl_tpp::MinTPP<DType>(1, dim);

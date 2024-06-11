@@ -58,6 +58,10 @@ template <>
 inline libxsmm_datatype XsmmDtype<bfloat16>() {
   return LIBXSMM_DATATYPE_BF16;
 }
+template <>
+inline libxsmm_datatype XsmmDtype<bfloat8>() {
+  return LIBXSMM_DATATYPE_BF8;
+}
 
 inline void debug_print_eqn_tree(libxsmm_blasint eqn_no, bool print=false) {
   if (print) {

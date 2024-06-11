@@ -196,9 +196,10 @@
   } while (0)
 #endif  // BF16_ENABLED
 #else   // DGL_USE_CUDA
-#define ATEN_FLOAT_TYPE_SWITCH_16BITS(val, FloatType, XPU, val_name, ...) \
+#define ATEN_FLOAT_TYPE_SWITCH_8BITS(val, FloatType, XPU, val_name, ...)  \
   do {                                                                    \
-    CHECK((val).code == kDGLFloat || (val.code == kDGLBfloat))            \
+    CHECK((val).code == kDGLFloat || (val.code == kDGLBfloat) ||          \
+        ((val).code == kDGLBfloat8) || ((val).code == kDGLHfloat8))       \
         << (val_name) << " must be float type";                           \
     if ((val).bits == 32) {                                               \
       typedef float FloatType;                                            \
@@ -209,6 +210,10 @@
     } else if (                                                           \
         XPU == kDGLCPU && (val).bits == 16 && (val).code == kDGLBfloat) { \
       typedef BFloat16 FloatType;                                         \
+      { __VA_ARGS__ }                                                     \
+    } else if (                                                           \
+        XPU == kDGLCPU && (val).bits == 8 && (val).code == kDGLBfloat8) { \
+      typedef bfloat8 FloatType;                                          \
       { __VA_ARGS__ }                                                     \
     } else {                                                              \
       LOG(FATAL) << (val_name)                                            \

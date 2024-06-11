@@ -31,6 +31,7 @@
 // forward declaration
 inline std::ostream& operator<<(std::ostream& os, DGLDataType t);
 typedef BFloat16 bfloat16;
+typedef uint8_t bfloat8;
 
 namespace dgl {
 

@@ -83,6 +83,10 @@ template COOMatrix CSRRowWiseTopk<kDGLCPU, int32_t, int64_t>(
     CSRMatrix, IdArray, int64_t, NDArray, bool);
 template COOMatrix CSRRowWiseTopk<kDGLCPU, int64_t, int64_t>(
     CSRMatrix, IdArray, int64_t, NDArray, bool);
+template COOMatrix CSRRowWiseTopk<kDGLCPU, int32_t, bfloat8>(
+    CSRMatrix, IdArray, int64_t, NDArray, bool);
+template COOMatrix CSRRowWiseTopk<kDGLCPU, int64_t, bfloat8>(
+    CSRMatrix, IdArray, int64_t, NDArray, bool);
 template COOMatrix CSRRowWiseTopk<kDGLCPU, int32_t, bfloat16>(
     CSRMatrix, IdArray, int64_t, NDArray, bool);
 template COOMatrix CSRRowWiseTopk<kDGLCPU, int64_t, bfloat16>(
@@ -111,6 +115,10 @@ template COOMatrix COORowWiseTopk<kDGLCPU, int64_t, int32_t>(
 template COOMatrix COORowWiseTopk<kDGLCPU, int32_t, int64_t>(
     COOMatrix, IdArray, int64_t, NDArray, bool);
 template COOMatrix COORowWiseTopk<kDGLCPU, int64_t, int64_t>(
+    COOMatrix, IdArray, int64_t, NDArray, bool);
+template COOMatrix COORowWiseTopk<kDGLCPU, int32_t, bfloat8>(
+    COOMatrix, IdArray, int64_t, NDArray, bool);
+template COOMatrix COORowWiseTopk<kDGLCPU, int64_t, bfloat8>(
     COOMatrix, IdArray, int64_t, NDArray, bool);
 template COOMatrix COORowWiseTopk<kDGLCPU, int32_t, bfloat16>(
     COOMatrix, IdArray, int64_t, NDArray, bool);
