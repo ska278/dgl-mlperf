@@ -279,7 +279,7 @@ def track_acc(g, category, args, device):
 
         if epoch%args.eval_every == 0:
             model.eval()
-            val_acc = evaluate(model, val_dataloader).item()*100
+            val_acc = evaluate(model, val_dataloader)
             if best_accuracy < val_acc:
                 best_accuracy = val_acc
                 if args.model_save:

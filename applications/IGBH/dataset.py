@@ -27,7 +27,8 @@ class IGBHeteroDGLDataset(DGLDataset):
                dataset_size='tiny',
                in_memory=False,
                use_label_2K=False,
-               use_bf16=False):
+               use_int8=False,
+               use_bf16=False,):
     self.dir = path
     self.dataset_size = dataset_size
     self.in_memory = in_memory

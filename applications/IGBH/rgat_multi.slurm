@@ -7,7 +7,6 @@
 #SBATCH --partition=emr
 #SBATCH --nodes=16
 #SBATCH --nodelist=emr[01-16]
-#SBATCH --reservation=mlperf
 
 source /opt/intel/oneapi/mpi/2021.12/env/vars.sh
 
@@ -24,4 +23,4 @@ export PSM3_MULTIRAIL=2
 
 python --version
 
-bash ./run_multi.sh $1 $2 $3 $4
+bash ./run_multi.sh $1 $2 $3 $4 $5 $6

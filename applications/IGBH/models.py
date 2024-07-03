@@ -5,11 +5,13 @@ from dgl import apply_each
 from dgl.nn.pytorch.conv import GATConv, GraphConv, SAGEConv
 from dgl.nn.pytorch import HeteroGraphConv
 from contextlib import contextmanager
-from tpp_pytorch_extension.gnn.gat import fused_GAT as tpp_gat
+from tpp_pytorch_extension.gnn.gat import fused_gat as tpp_gat
 from tpp_pytorch_extension.gnn.common import gnn_utils
 
 use_opt_mlp = False
 linear = None
+
+global_layer_dtype = torch.float32
 
 @contextmanager
 def opt_impl(enable=True, use_bf16=False):
@@ -23,11 +25,9 @@ def opt_impl(enable=True, use_bf16=False):
             if enable:
                 use_opt_mlp = enable
                 if use_bf16:
-                    GATConv = tpp_gat.GATConvOptBF16
-                    linear = tpp_gat.LinearOutBF16
-                else:
-                    GATConv = tpp_gat.GATConvOpt
-                    linear = tpp_gat.LinearOut
+                    global_layer_dtype = torch.bfloat16
+                GATConv = tpp_gat.GATConvOpt
+                linear = tpp_gat.LinearOut
             yield
         finally:
             GATConv = orig_GATConv

@@ -12,7 +12,7 @@ import os.path as osp
 import collections
 from contextlib import contextmanager
 
-from tpp_pytorch_extension.gnn.gat import fused_GAT as tpp_gat
+from tpp_pytorch_extension.gnn.gat import fused_gat as tpp_gat
 from tpp_pytorch_extension.gnn.common import gnn_utils
 
 from dgl.nn.pytorch import HeteroGraphConv
@@ -36,22 +36,23 @@ mllogger = get_mlperf_logger(path=osp.dirname(osp.abspath(__file__)))
 capture_graph_stats = False
 linear = None
 
+global_layer_dtype = th.float32
+
 @contextmanager
 def opt_impl(enable=True, use_bf16=False):
     try:
         global GATConv
         global linear
+        global global_layer_dtype
         orig_GATConv = GATConv
-        linear = nn.Linear
+        orig_linear = nn.Linear
 
         try:
             if enable:
+                linear = tpp_gat.LinearOut
+                GATConv = tpp_gat.GATConvOpt
                 if use_bf16:
-                    GATConv = tpp_gat.GATConvOptBF16
-                    linear = tpp_gat.LinearOutBF16
-                else:
-                    GATConv = tpp_gat.GATConvOpt
-                    linear = tpp_gat.LinearOut
+                    global_layer_dtype = th.bfloat16
             yield
         finally:
             GATConv = orig_GATConv
@@ -65,17 +66,17 @@ class RGAT(nn.Module):
         self.layers = nn.ModuleList()
         n_hidden = h_feats // n_heads
         self.layers.append(HeteroGraphConv({
-            etype: GATConv(in_feats, n_hidden, n_heads, activation=activation, feat_drop=dropout, input_needs_grad=False)
+            etype: GATConv(in_feats, n_hidden, n_heads, activation=activation, feat_drop=dropout, input_needs_grad=False, layer_dtype=global_layer_dtype)
             for etype in etypes}))
         for _ in range(num_layers-2):
             self.layers.append(HeteroGraphConv({
-                etype: GATConv(h_feats, n_hidden, n_heads, activation=activation, feat_drop=dropout)
+                etype: GATConv(h_feats, n_hidden, n_heads, activation=activation, feat_drop=dropout, layer_dtype=global_layer_dtype)
                 for etype in etypes}))
         self.layers.append(HeteroGraphConv({
-            etype: GATConv(h_feats, n_hidden, n_heads, activation=None)
+            etype: GATConv(h_feats, n_hidden, n_heads, activation=None, layer_dtype=global_layer_dtype)
             for etype in etypes}))
-
-        self.linear = linear(h_feats, num_classes)
+        
+        self.linear = linear(h_feats, num_classes, global_layer_dtype)
         self.queue = gqueue()
 
     def forward(self, blocks, x):
@@ -145,7 +146,7 @@ def evaluate(distgnn_inf, model, s_batch, e_batch, epoch_num):
             metadata={mllog_constants.EPOCH_NUM: epoch_num},
         )
 
-    return acc.item(), global_acc
+    return global_acc
 
 class AverageMeter(object):
     def __init__(self):
@@ -170,7 +171,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
     features   = distgnn.get_feats
     in_feats   = features.shape[1]
 
-    with opt_impl(args.opt_mlp, args.use_bf16):
+    with opt_impl(args.tpp_impl, args.use_bf16):
         model = RGAT(g_orig.etypes, in_feats, args.hidden_channels,
             args.n_classes, args.num_layers, args.num_heads, F.leaky_relu)
     
@@ -184,6 +185,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
     else:
         m = model
 
+    print(m)
     if args.rank == 0:
         #print("###############################")
         #print("Model layers: ", m.layers)
@@ -199,7 +201,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
         print('model size: {:.3f}MB'.format(size_all_mb))
 
     loss_fcn = nn.CrossEntropyLoss()
-    if args.opt_mlp:
+    if args.tpp_impl:
         no_decay = ["bias"]
         optimizer_grouped_parameters = [
             {
@@ -259,6 +261,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
         t0 = tic_gg
         for i in range(s_batch, e_batch):
 
+            dist.barrier()
             input_nodes, blocks, batch_inputs, batch_labels, seeds = distgnn.batch_setup(i)
 
             if i > 1:
@@ -294,9 +297,10 @@ def distgnn_train(distgnn, distgnn_inf, pb):
 
             distgnn.optimize(i)
 
-            #total_loss += loss.item()
-            #train_acc += sklearn.metrics.accuracy_score(batch_labels.cpu().numpy(),
-            #    batch_pred.argmax(1).detach().cpu().numpy())*100
+            if i > 1:
+                t7 = time.time()
+                ticos += t7 - t6
+
             if args.rank == 0:
                 if step > 0 and step % args.log_every == 0:
                     if not args.use_ddp and not distgnn.ps_overlap:
@@ -337,7 +341,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
             if step > svar and step % validation_freq == svar:
                 model.eval()
                 epoch_num = epoch + step / batch_num
-                val_acc, global_acc = evaluate(distgnn_inf, model, s_batch_inf, e_batch_inf, epoch_num)
+                global_acc = evaluate(distgnn_inf, model, s_batch_inf, e_batch_inf, epoch_num)
 
                 if global_acc >= args.target_acc:
                     if args.rank == 0:
@@ -364,7 +368,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
 
         #distgnn.profile()
         if args.rank == 0:
-            print("Epoch: {} time: {:0.4} sec".format(epoch, toc_gg - tic_gg), end="", flush=True)
+            print("Epoch: {} time: {:0.4f} sec".format(epoch, toc_gg - tic_gg), end="", flush=True)
             print(' dltime: {:.4f}, dlt: {:.4f}, ftime: {:.4f}, btime: {:.4f}, ' \
                     'all-red time: {:.4f}, opt step: {:.4f} sec' \
                   .format(ticd, ticlst, ticf, ticb, ticar, ticos), flush=True)
@@ -375,7 +379,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
         #        print('avg total nodes: ', total_nodes, flush=True)
         #    print()
 
-        #dist.barrier()
+        dist.barrier()
 
         if target_reached: break
 
@@ -407,8 +411,10 @@ if __name__ == '__main__':
         choices=[19, 2983], help='number of classes')
 
     # Model
-    parser.add_argument('--modelpath', type=str, default='')
-    parser.add_argument('--model_save', type=int, default=0)
+    parser.add_argument('--modelpath', type=str, default='.')
+    parser.add_argument('--model_save', action="store_true",
+            help="save model checkpoint?"
+    )
 
     # Model parameters
     parser.add_argument('--fan_out', type=str, default='15,10,5')
@@ -428,7 +434,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_every', type=int, default=5)
     parser.add_argument('--target_acc', type=float, default=1.0)
 
-    parser.add_argument( "--opt_mlp", action="store_true",
+    parser.add_argument( "--tpp_impl", action="store_true",
         help="Whether to use optimized MLP impl when available",
     )
     parser.add_argument( "--use_bf16", action="store_true",
@@ -475,7 +481,8 @@ if __name__ == '__main__':
         mllogger.end(key=mllog_constants.INIT_STOP)
         mllogger.start(key=mllog_constants.RUN_START)
 
-    part_config = os.path.join(args.path, args.dataset, args.dataset_size)
+    #part_config = os.path.join(args.path, args.dataset, args.dataset_size)
+    part_config = args.path
     category = 'cites'
 
     train_start = time.time()

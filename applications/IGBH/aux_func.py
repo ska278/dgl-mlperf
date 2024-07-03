@@ -12,6 +12,7 @@ from dgl.dataloading import NeighborSampler
 import dgl
 from itertools import accumulate
 import numpy as np
+import psutil, os
 
 class distgnn_mb:
     def __init__(self, pb, args, category=''):
@@ -48,14 +49,12 @@ class distgnn_mb:
             self.gobj = iels_master(pb, args)
         elif self.mode == 'hels':
             self.gobj = hels_master(pb, args)
-
-        #self.init_setup()
         self.node_feats = pb.node_feats
 
         self.batch_size = args.batch_size  ## train batch size
         self.delay = args.ielsqsize
         self.rank = args.rank
-        self.opt_mlp = args.opt_mlp
+        self.tpp_impl = args.tpp_impl
 
         self.use_ddp = args.use_ddp
         self.ps_overlap = not args.use_ddp
@@ -276,7 +275,7 @@ class distgnn_mb:
 
     def hels_load_subtensor(self, seeds, input_nodes): ## assuming fp32 or bhf16, no conversion here
         feats = self.node_feats['feat']
-        if self.opt_mlp:
+        if self.tpp_impl:
             batch_inputs = gnn_utils.gather_features(feats, input_nodes.long())
         else:
             batch_inputs = feats[input_nodes]
