@@ -224,8 +224,7 @@ def _gspmm(gidx, op, reduce_op, u, e):
     v_shp = (gidx.num_nodes(dsttype),) + infer_broadcast_shape(
         op, u_shp[1:], e_shp[1:]
     )
-    #v = F.zeros(v_shp, dtype, ctx)
-    v = F.empty(v_shp, dtype, ctx)
+    v = F.zeros(v_shp, dtype, ctx)
     use_cmp = reduce_op in ["max", "min"]
     arg_u, arg_e = None, None
     idtype = getattr(F, gidx.dtype)
