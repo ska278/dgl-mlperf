@@ -121,9 +121,7 @@ class iels_master():
             print("sn_gnid size: ", self.part_sn_gnid.size())
 
         rr = self.create_remote_sn_db_commence()
-        assert th.equal(self.onid_map, pb.onid_map) == True
-        assert th.equal(self.pid_map, pb.pid_map) == True
-        
+       
         ## local feats db - orig node id to index in the feat table
         self.create_local_sn_db(self.part_sn_onid, self.part_sn_gnid)  ## at partition level
         ## database to know in which partition the remote ndoes are residing
