@@ -440,6 +440,9 @@ if __name__ == '__main__':
     parser.add_argument( "--use_bf16", action="store_true",
         help="Whether to use BF16 datatype when available",
     )
+    parser.add_argument( "--use_int8", action="store_true",
+        help="Whether to use int8 datatype when available",
+    )
 
     parser.add_argument("--mode", type=str, default="iels")
     parser.add_argument("--part_method", type=str, default="random")
@@ -481,9 +484,8 @@ if __name__ == '__main__':
         mllogger.end(key=mllog_constants.INIT_STOP)
         mllogger.start(key=mllog_constants.RUN_START)
 
-    #part_config = os.path.join(args.path, args.dataset, args.dataset_size)
-    part_config = args.path
-    category = 'cites'
+    part_config = os.path.join(args.path, args.dataset, args.dataset_size)
+    category = 'paper'
 
     train_start = time.time()
     pb = create_partition_book(args, part_config, category)

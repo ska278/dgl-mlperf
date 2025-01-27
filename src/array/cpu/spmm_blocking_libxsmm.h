@@ -431,8 +431,6 @@ inline int SpMMRedopCsrOpt(
     }
   }
   else { //Binary + Unary
-#if 0
-#endif
     if(std::is_same<Redop, op::Max<DType>>::value || std::is_same<Redop, op::Min<DType>>::value) {
       auto max_tpp = dgl_tpp::MaxTPP<DType>(1, dim);
       auto min_tpp = dgl_tpp::MinTPP<DType>(1, dim);

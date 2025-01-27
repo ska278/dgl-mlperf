@@ -187,9 +187,19 @@ class HeteroGraphConv(nn.Module):
                 src_inputs, dst_inputs = inputs
             else:
                 src_inputs = inputs
-                dst_inputs = {
-                    k: v[: g.number_of_dst_nodes(k)] for k, v in inputs.items()
-                }
+                for etype in g.etypes:
+                    if len(mod_kwargs) > 0:
+                        if len(mod_kwargs[etype]) > 1:
+                            dst_inputs = inputs
+                        else:
+                            dst_inputs = {
+                                k: v[: g.number_of_dst_nodes(k)] for k, v in inputs.items()
+                            }
+                    else:
+                        dst_inputs = {
+                            k: v[: g.number_of_dst_nodes(k)] for k, v in inputs.items()
+                        }
+                    break
 
             for stype, etype, dtype in g.canonical_etypes:
                 rel_graph = g[stype, etype, dtype]

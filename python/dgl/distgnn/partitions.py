@@ -13,12 +13,13 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from dgl.distgnn.communicate import mpi_allreduce
 import time
+import os
 
 debug = False
 
 class partition_book:
     def __init__(self, p):
-        g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, nmi, nmp = p
+        g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes = p
         self.g_orig = g_orig
         self.node_feats = node_feats
         self.node_map = node_map
@@ -26,8 +27,6 @@ class partition_book:
         self.n_classes = n_classes
         self.dle = dle
         self.etypes = etypes
-        self.onid_map = nmi
-        self.pid_map = nmp
 
 def standardize_metis_parts(graph, node_feats, rank, resize=False):
     N = graph.number_of_nodes()
@@ -188,10 +187,9 @@ def load_GNNdataset(args):
                 g_orig = None
 
     elif args.dataset == 'IGBH':
+        path = os.path.join(args.path, args.dataset, args.dataset_size)
         filename = os.path.join(
-                     args.path, 
-                     args.dataset,
-                     args.dataset_size,
+                     path, 
                      str(args.world_size)+args.token,
                      "struct.graph"
                    )
@@ -210,12 +208,9 @@ def partition_book_random(args, part_config, category='', resize_data=False):
 
     dls = time.time()
     g_orig, n_classes = load_GNNdataset(args)
-    if category != '':
-        g_orig = dgl.remove_self_loop(g_orig, etype=category)
-        g_orig = dgl.add_self_loop(g_orig, etype=category)
 
     ntypes = g_orig.ntypes
-    etypes = g_orig.canonical_etypes
+    g_orig = None
 
     part_config_g = part_config
     di = str(num_parts) + args.token
@@ -233,88 +228,105 @@ def partition_book_random(args, part_config, category='', resize_data=False):
 
     prefix = part_config_g + "/"
     part_files = part_metadata['part-{}'.format(args.rank)]
-    node_feats = load_tensors(prefix + part_files['node_feats'])
-    graph = load_graphs(prefix + part_files['part_graph'])[0][0]
-    
-    path = prefix + part_files['part_graph']
-    dname = os.path.dirname(path)
-    node_map_index = th.load(os.path.join(dname, "node_map_index.pt"))  ## Push these into json
-    node_map_part = th.load(os.path.join(dname, "node_map_part.pt"))  ## Push these into json
-    
-    nf_keys = node_feats.keys()
-
-    num_nodes_per_ntype = [g_orig.num_nodes(ntype) for ntype in g_orig.ntypes]
-    offset_per_ntype = np.insert(np.cumsum(num_nodes_per_ntype), 0, 0)
-
-    nsn = int(graph.ndata['inner_node'].sum())
-
-    for keys, nt in enumerate(g_orig.ntypes):
-        ft = nt + '/feat'
-        if keys == 0:
-            node_feats['feat'] = node_feats[ft]
-        else:
-            node_feats['feat'] = th.cat((node_feats['feat'], node_feats[ft]), 0)
-        del node_feats[ft]
-    if args.use_bf16 and (not node_feats['feat'].dtype == th.bfloat16): 
-        node_feats['feat'] = node_feats['feat'].to(th.bfloat16)
-    elif not args.use_bf16 and node_feats['feat'].dtype == th.bfloat16:
-        node_feats['feat'] = node_feats['feat'].to(th.float32)
     dle = time.time() - dls
 
+    graph = load_graphs(prefix + part_files['part_graph'])[0][0]
+    nsn = int(graph.ndata['inner_node'].sum())
+
+    train_mask = th.zeros(nsn, dtype=th.uint8)
+    val_mask = th.zeros(nsn, dtype=th.uint8)
+    labels = th.zeros(nsn, dtype=th.long)
+
+    pnid = {}
+
+    mask_key = None
+    for k, nt in enumerate(ntypes):
+        pnid[k] = (graph.ndata['_TYPE'][:nsn] == k).nonzero(as_tuple=True)[0]
+        if nt == category:
+            mask_key = k
+        
+    inner_node = graph.ndata['inner_node']
+    orig_id = graph.ndata['orig_id']
+    _TYPE = graph.ndata['_TYPE']
+                
+    graph = None
+
+    if args.rank == 0:
+        process = psutil.Process(os.getpid())
+        print(f'Loaded graph partition data. Mem used: {process.memory_info().rss/1e9} GB', flush=True)
     acc, acc_labels = 0, 0
-    masks = []
-    label = []
-    for keys in nf_keys:
-        if 'mask' in keys:
-            masks.append(keys)
-        if 'label' in keys:
-            label.append(keys)
 
-    node_feats['train_mask'] = th.zeros(nsn, dtype=th.uint8)
-    #node_feats['test_mask']  = th.zeros(nsn, dtype=th.uint8)
-    node_feats['val_mask']   = th.zeros(nsn, dtype=th.uint8)
-    node_feats['labels']     = th.zeros(nsn, dtype=th.int64)
+    part_files = part_metadata['part-{}'.format(args.rank)]
+    node_feats = load_tensors(prefix + part_files['node_feats'])
+    if len(ntypes) > 1:
+        train_mask[pnid[mask_key]] = node_feats[category+'/train_mask']
+        val_mask[pnid[mask_key]] = node_feats[category+'/val_mask']
+        labels[pnid[mask_key]] = node_feats[category+'/label']
+    else:
+        train_mask[pnid[mask_key]] = node_feats['train_mask']
+        val_mask[pnid[mask_key]] = node_feats['val_mask']
+        labels[pnid[mask_key]] = node_feats['label']
 
-    for keys, nt in enumerate(g_orig.ntypes):
-        pnid = (graph.ndata['_TYPE'][:nsn] == keys).nonzero(as_tuple=True)[0]
-        for m in masks:
-            if nt in m:
-                if 'train' in m:
-                    node_feats['train_mask'][pnid] = node_feats[m]
-                    acc += node_feats[m].sum()
-                elif 'val' in m:
-                    m = nt+'/val_mask'
-                    node_feats['val_mask'][pnid] = node_feats[m]
-                #elif 'test' in m:
-                #    m = nt+'/test_mask'
-                #    node_feats['test_mask'][pnid] = node_feats[m]
-        for l in label:
-            if nt in l:
-                node_feats['labels'][pnid] = node_feats[l]
-                acc_labels += (node_feats[l] > 0).sum()
+    node_feats['train_mask'] = train_mask
+    node_feats['val_mask'] = val_mask
+    node_feats['labels'] = labels
+    node_feats['inner_node'] = inner_node
+    node_feats['orig'] = orig_id
+    node_feats['_TYPE'] = _TYPE
+    del node_feats[category+'/train_mask']
+    del node_feats[category+'/val_mask']
+    del node_feats[category+'/test_mask']
+    del node_feats[category+'/label']
 
-    node_feats['inner_node'] = graph.ndata['inner_node']
-    node_feats['orig'] = graph.ndata['orig_id']
-    node_feats['_TYPE'] = graph.ndata['_TYPE']
+    node_feats['feat'] = None
+    node_feats['scf'] = None
+    if len(ntypes) > 1:
+        for nt in ntypes:
+            if node_feats['feat'] is None:
+                node_feats['feat'] = node_feats[nt+'/feat']
+                del node_feats[nt+'/feat']
+            else:
+                node_feats['feat'] = th.cat((node_feats['feat'], node_feats[nt+'/feat']),0)
+                del node_feats[nt+'/feat']
+
+            if args.use_int8:
+                if node_feats['scf'] is None:
+                    node_feats['scf'] = node_feats[nt+'/scf']
+                    del node_feats[nt+'/scf']
+                else:
+                    node_feats['scf'] = th.cat((node_feats['scf'], node_feats[nt+'/scf']), 0)
+                    del node_feats[nt+'/scf']
+
+    if not args.use_int8:
+        if args.use_bf16 and (not node_feats['feat'].dtype == th.bfloat16): 
+            node_feats['feat'] = node_feats['feat'].to(th.bfloat16)
+        elif not args.use_bf16 and node_feats['feat'].dtype == th.bfloat16:
+            node_feats['feat'] = node_feats['feat'].to(th.float32)
+
+    dls = time.time()
+    if args.rank == 0:
+        process = psutil.Process(os.getpid())
+        print(f'Loaded graph partition data. Mem used: {process.memory_info().rss/1e9} GB')
+
+    g_orig, n_classes = load_GNNdataset(args)
+    dle = dle + (time.time() - dls)
+
     node_feats['train_samples'] = g_orig.ndata['train_mask']['paper'].sum()
     node_feats['eval_samples'] = g_orig.ndata['val_mask']['paper'].sum()
                 
-    assert acc ==  node_feats['paper/train_mask'].sum()
-    assert acc_labels == (node_feats['paper/label'] > 0).sum()
-    del graph
-    del node_feats['paper/train_mask']
-    del node_feats['paper/val_mask']
-    del node_feats['paper/test_mask']
-    del node_feats['paper/label']
-    del g_orig.ndata['test_mask']['paper']
-    del g_orig.ndata['train_mask']['paper']
-    del g_orig.ndata['val_mask']['paper']
+    g_orig.ndata['test_mask']['paper'] = None
+    g_orig.ndata['train_mask']['paper'] = None
+    g_orig.ndata['val_mask']['paper'] = None
+
+    if args.rank == 0:
+        process = psutil.Process(os.getpid())
+        print(f'Loaded full graph struct. Mem used: {process.memory_info().rss/1e9} GB')
 
     etypes = g_orig.etypes
 
     #node_map = part_metadata['node_map']
     node_map = None
-    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes, node_map_index, node_map_part
+    d = g_orig, node_feats, node_map, num_parts, n_classes, dle, etypes
     pb = partition_book(d)
     return pb
 
