@@ -92,6 +92,15 @@ class feat_cache:
             ## lru
             val, ind = th.sort(self.wt)
             clines = ind[:nodes.shape[0]]
+
+            #self.cachemap[self.rptr[clines]] = -200
+            #self.rptr[clines] = nodes
+            #self.cachemap[nodes] = clines
+            ### asssuming feats to be a 2-D matrix
+            #gnn_utils.scatter_features(feats, clines.long(), self.buf_feats, 0)
+            #self.wt[clines] = self.cur_itr
+            #self.cur_itr += 1
+
         else:
             print('Error: Incorrect cache store policy!')
 

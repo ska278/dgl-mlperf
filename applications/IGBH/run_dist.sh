@@ -48,7 +48,8 @@ while (( "$#" )); do
 done
 
 if ! test -z $SLURM_JOB_ID ; then
-  PREFIX="srun -n 1 -N 1 "
+  #PREFIX="srun -n 1 -N 1 "
+  PREFIX=""
 else
   PREFIX=
 fi
@@ -61,7 +62,7 @@ if ! test -z $ARGS_HOSTFILE ; then
     PREFIX="mpiexec.hydra -np 1 -ppn 1 -f $ARGS_HOSTFILE"
   fi
 fi
-
+echo "PREFIX: "$PREFIX
 CORES_PER_SOCKET=`$PREFIX lscpu | grep "Core(s) per socket" | awk '{print $NF}'`
 NUM_SOCKETS=`$PREFIX lscpu | grep "Socket(s):" | awk '{print $NF}'`
 NUM_NUMA_NODES=`$PREFIX lscpu | grep "NUMA node(s):" | awk '{print $NF}'`
@@ -164,7 +165,9 @@ echo "#### INITIAL ENV ####"
 echo "PyTorch version: `python -c "import torch; print(torch.__version__)" 2> /dev/null`"
 
 if ! test -z $SLURM_JOB_ID ; then
-srun hostname | sort -u
+    #srun hostname | sort -u
+    hostname | sort -u
+    
 fi
 
 export MASTER_ADDR=`$PREFIX hostname`
@@ -175,7 +178,7 @@ CMD=$1
 shift
 ARGS="$@"
 
-MPIEXE_ARGS="-np $NP $OPT_PPN $OPT_HOSTFILE -l -genv I_MPI_PIN_DOMAIN=$I_MPI_PIN_DOMAIN -genv CCL_WORKER_AFFINITY=$CCL_WORKER_AFFINITY -genv CCL_WORKER_COUNT=$CCL_WORKER_COUNT -genv OMP_NUM_THREADS=$OMP_NUM_THREADS " 
+MPIEXE_ARGS="-np $NP $OPT_PPN $OPT_HOSTFILE -l -genv I_MPI_PIN_DOMAIN=$I_MPI_PIN_DOMAIN -genv CCL_WORKER_AFFINITY=$CCL_WORKER_AFFINITY -genv CCL_WORKER_COUNT=$CCL_WORKER_COUNT -genv OMP_NUM_THREADS=$OMP_NUM_THREADS "
 
 #echo "Running mpiexec.hydra ${MPIEXE_ARGS} $CMD $@"
 eval set -- "${MPIEXE_ARGS} hostname"

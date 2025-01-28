@@ -18,7 +18,7 @@ from tpp_pytorch_extension.gnn.common import gnn_utils
 from dgl.nn.pytorch import HeteroGraphConv
 from dgl.nn.pytorch.conv import GATConv
 from dgl.distgnn.mpi import init_mpi
-from dgl.distgnn.partitions import partition_book_random, create_partition_book
+from dgl.distgnn.partitions import partition_book
 from dgl.distgnn.communicate import alltoall_v_sync
 
 from aux_func import *
@@ -133,7 +133,7 @@ def evaluate(distgnn_inf, model, s_batch, e_batch, epoch_num):
         dist.barrier()
         acc_tensor = torch.tensor(acc)
         dist.all_reduce(acc_tensor, op=dist.ReduceOp.SUM)
-        global_acc = acc_tensor.item() / args.world_size
+        global_acc = acc_tensor.item() / args.num_parts
 
     if args.rank == 0:
         mllogger.event(
@@ -164,15 +164,16 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+        
 def distgnn_train(distgnn, distgnn_inf, pb):
 
     tic = time.time()
-    g_orig = pb.g_orig
+    #g_orig = pb.g_orig
     features   = distgnn.get_feats
     in_feats   = features.shape[1]
 
     with opt_impl(args.tpp_impl, args.use_bf16):
-        model = RGAT(g_orig.etypes, in_feats, args.hidden_channels,
+        model = RGAT(pb.all_etypes, in_feats, args.hidden_channels,
             args.n_classes, args.num_layers, args.num_heads, F.leaky_relu)
     
     block(model)
@@ -185,7 +186,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
     else:
         m = model
 
-    print(m)
+    #print(m)
     if args.rank == 0:
         #print("###############################")
         #print("Model layers: ", m.layers)
@@ -244,6 +245,7 @@ def distgnn_train(distgnn, distgnn_inf, pb):
         batch_bwd_time = AverageMeter()
         mbc_time = AverageMeter()
         ar_time = AverageMeter()
+        ops_time = AverageMeter()
 
         ticd, ticlst, ticbs, ticf, ticb, ticar, ticos = 0, 0, 0, 0, 0, 0, 0
         ticd0, tic_gg = 0, time.time()
@@ -305,8 +307,8 @@ def distgnn_train(distgnn, distgnn_inf, pb):
                 if step > 0 and step % args.log_every == 0:
                     if not args.use_ddp and not distgnn.ps_overlap:
                         print("Epoch {:05d} | Step {:05d} | Loss {:.2f} | Time(s) {:.2f} |"
-                                " MBC {:.2f} ({:.2f}) | FWD {:.2f} ({:.2f}) | BWD {:.2f} ({:.2f}) |"
-                                " AR {:.2f} ({:.2f}) | OPT {:.2f} ({:.2f})"
+                              " MBC {:.2f} ({:.2f}) | FWD {:.2f} ({:.2f}) | BWD {:.2f} ({:.2f}) |"
+                              " AR {:.2f} ({:.2f}) | OPT {:.2f} ({:.2f})"
                               .format( epoch, step, loss.item(), time.time() - t0, 
                                        mbc_time.val, mbc_time.avg, 
                                        batch_fwd_time.val, batch_fwd_time.avg,
@@ -338,11 +340,11 @@ def distgnn_train(distgnn, distgnn_inf, pb):
             dist.barrier()
             if distgnn.ps_overlap: svar=1
             else: svar=0
-            if step > svar and step % validation_freq == svar:
+            if True: ##step > svar and step % validation_freq == svar:
                 model.eval()
                 epoch_num = epoch + step / batch_num
                 global_acc = evaluate(distgnn_inf, model, s_batch_inf, e_batch_inf, epoch_num)
-
+            
                 if global_acc >= args.target_acc:
                     if args.rank == 0:
                         if args.model_save:
@@ -360,9 +362,9 @@ def distgnn_train(distgnn, distgnn_inf, pb):
         toc_gg = time.time()
         if capture_graph_stats:
             dist.all_reduce(halo_nodes)
-            halo_nodes = halo_nodes / (args.world_size * max_steps)
+            halo_nodes = halo_nodes / (args.num_parts * max_steps)
             dist.all_reduce(total_nodes)
-            total_nodes = total_nodes / (args.world_size * max_steps)
+            total_nodes = total_nodes / (args.num_parts * max_steps)
 
         #dist.barrier()
 
@@ -398,13 +400,13 @@ def distgnn_train(distgnn, distgnn_inf, pb):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Loading dataset
-    parser.add_argument('--path', type=str, default='',
-        help='path containing the dataset')
+    #parser.add_argument('--path', type=str, default='',
+    #    help='path containing the dataset')
     parser.add_argument('--dataset', type=str, default='IGBH',
             help='name of the dataset')
-    parser.add_argument('--dataset_size', type=str, default='full',
-        choices=['tiny', 'small', 'medium', 'large', 'full'],
-        help='size of the datasets')
+    #parser.add_argument('--dataset_size', type=str, default='medium',
+    #    choices=['tiny', 'small', 'medium', 'large', 'full'],
+    #    help='size of the datasets')
     parser.add_argument("--token", type=str, default="p",
             help='string to identify partition root-dir')
     parser.add_argument('--n_classes', type=int, default=19,
@@ -442,7 +444,7 @@ if __name__ == '__main__':
     )
 
     parser.add_argument("--mode", type=str, default="iels")
-    parser.add_argument("--part_method", type=str, default="random")
+    parser.add_argument("--part_method", type=str, default="csr")
     parser.add_argument("--ielsqsize", type=int, default=1,
        help="#delay in delayed updates")
     parser.add_argument('--world-size', default=-1, type=int,
@@ -457,9 +459,22 @@ if __name__ == '__main__':
                             help='use or not torch distributed data parallel')
     parser.add_argument("--enable_iec", action='store_true', 
             help="enables original embedding cache")
+    parser.add_argument('--path', type=str, default='/scratch/mvasimud/omics/igb_datasets/',
+                        help='path containing the datasets')
+    parser.add_argument('--part_path', type=str, default='/scratch/mvasimud/IGBH/partitions/',
+                        help='path for partitioned graph')
+    
+    parser.add_argument('--dataset_size', type=str, default='small',
+                        choices=['tiny', 'small', 'medium', 'large', 'full'],
+                        help='size of the datasets')
+    parser.add_argument('--num_classes', type=int, default=19,
+                        choices=[19, 2983], help='number of classes')
+    parser.add_argument('--in_memory', type=int, default=0,
+                        choices=[0, 1], help='0:read only mmap_mode=r, 1:load into memory')
+    
     args = parser.parse_args()
 
-    args.rank, args.world_size = init_mpi(args.dist_backend, args.dist_url)
+    args.rank, args.num_parts = init_mpi(args.dist_backend, args.dist_url)
 
     seed = int(datetime.datetime.now().timestamp())
     seed = seed >> (seed.bit_length() - 31)
@@ -469,11 +484,11 @@ if __name__ == '__main__':
     ppx.manual_seed(seed)
 
 
-    if args.rank == 0:
+    if False and args.rank == 0:
         mllogger.event(key=mllog_constants.CACHE_CLEAR, value=True)
         mllogger.start(key=mllog_constants.INIT_START)
         submission_info(mllogger, mllog_constants.GNN, 'Intel', 'Intel Xeon(R) 8592, codenamed Emerald Rapids')
-        mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=args.world_size*args.batch_size)
+        mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=args.num_parts*args.batch_size)
         mllogger.event(key=mllog_constants.GRADIENT_ACCUMULATION_STEPS, value=1)
         mllogger.event(key=mllog_constants.OPT_NAME, value='adam')
         mllogger.event(key=mllog_constants.OPT_BASE_LR, value=args.learning_rate)
@@ -482,27 +497,30 @@ if __name__ == '__main__':
         mllogger.start(key=mllog_constants.RUN_START)
 
     #part_config = os.path.join(args.path, args.dataset, args.dataset_size)
-    part_config = args.path
-    category = 'cites'
+    #part_config = args.part_path
+    #category = 'cites'
 
     train_start = time.time()
-    pb = create_partition_book(args, part_config, category)
+    args.part_path = os.path.join(args.part_path, args.dataset_size)
+    pb = partition_book(args.rank, args.num_parts, args.part_path)
 
     dist.barrier()
     if args.rank == 0:
         print('Data read time from disk {:.4f}'.format(pb.dle))
 
-    if pb.g_orig is None:
-        print('Unable to load original graph object! exiting...')
-        os.sys.exit(1)
+    #if pb.g_orig is None:
+    #    print('Unable to load original graph object! exiting...')
+    #    os.sys.exit(1)
 
-    if args.rank == 0:
-        mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=pb.node_feats['train_samples'].item())
-        mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=pb.node_feats['eval_samples'].item())
+    #if args.rank == 0:
+    #    mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=pb.node_feats['train_samples'].item())
+    #    mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=pb.node_feats['eval_samples'].item())
 
     t = time.time()
-    distgnn = distgnn_mb(pb, args, 'paper')
-    distgnn_inf = distgnn_mb_inf(pb, distgnn.gobj, args, distgnn.acc_onodes, distgnn.acc_pnodes, distgnn.tr_ntype, 'paper') 
+    category='paper'
+    distgnn = distgnn_mb(pb, args, category)
+    distgnn_inf = distgnn_mb_inf(pb, distgnn.gobj, args, 'paper')
+    #distgnn_inf = None
     dist.barrier()
     rpt = time.time() - t 
     
@@ -514,7 +532,7 @@ if __name__ == '__main__':
     if args.rank == 0:
         print("Run details:")
         print('exec file name:', os.path.basename(__file__))
-        print("| world size: ", args.world_size, end="")
+        print("| world size: ", args.num_parts, end="")
         print("| dataset:", args.dataset, end="")
         print("| lr: ", args.learning_rate, end="")
         print("| fan_out: ", args.fan_out, end="")

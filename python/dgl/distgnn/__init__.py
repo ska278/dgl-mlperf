@@ -1,6 +1,7 @@
 """
 This package contains DistGNN and Libra based graph partitioning tools.
 """
+
 mode = 'orig'
 def set_mode(mode_):
     global mode
